@@ -1,0 +1,516 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Non-PII staff directory entry for assignment dropdowns and role display.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["Administrador", "Administración", "Comercial", "Técnico", "Consulta"] },
+        "department": { "type": "string", "maxLength": 80 },
+        "active": { "type": "boolean" },
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "active", "orgId", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile containing PII and RBAC role.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "department": { "type": "string", "maxLength": 80 },
+        "role": { "type": "string", "enum": ["Administrador", "Administración", "Comercial", "Técnico", "Consulta"] },
+        "active": { "type": "boolean" },
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "active", "orgId", "createdAt", "updatedAt"]
+    },
+    "UserInvite": {
+      "title": "UserInvite",
+      "description": "Pre-approved staff invitation created by an Administrator.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["Administrador", "Administración", "Comercial", "Técnico", "Consulta"] },
+        "department": { "type": "string", "maxLength": 80 },
+        "active": { "type": "boolean" },
+        "invitedBy": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "displayName", "role", "active", "invitedBy", "orgId", "createdAt"]
+    },
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "Global enterprise fiscal, branding, banking, and gestoría configuration.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "tradeName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "legalName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "taxId": { "type": "string", "minLength": 5, "maxLength": 24 },
+        "fiscalAddress": { "type": "string", "maxLength": 240 },
+        "postalCode": { "type": "string", "maxLength": 16 },
+        "city": { "type": "string", "maxLength": 80 },
+        "province": { "type": "string", "maxLength": 80 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 160 },
+        "iban": { "type": "string", "maxLength": 40 },
+        "bankName": { "type": "string", "maxLength": 80 },
+        "logoDataUrl": { "type": "string", "maxLength": 200000 },
+        "invoiceSeries": { "type": "array" },
+        "vatRates": { "type": "array" },
+        "retentionRates": { "type": "array" },
+        "currentFiscalYear": { "type": "number" },
+        "gestorName": { "type": "string", "maxLength": 120 },
+        "gestorFirm": { "type": "string", "maxLength": 120 },
+        "gestorEmail": { "type": "string", "maxLength": 160 },
+        "gestorPhone": { "type": "string", "maxLength": 32 },
+        "notifyDaysBeforeDue": { "type": "number" },
+        "notifyFiscalDaysBefore": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "tradeName", "legalName", "taxId", "currentFiscalYear", "updatedAt"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "CRM client record with fiscal, contact, and status details.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "taxId": { "type": "string", "minLength": 4, "maxLength": 24 },
+        "fiscalAddress": { "type": "string", "maxLength": 240 },
+        "postalCode": { "type": "string", "maxLength": 16 },
+        "city": { "type": "string", "maxLength": 80 },
+        "province": { "type": "string", "maxLength": 80 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 160 },
+        "contactPerson": { "type": "string", "maxLength": 120 },
+        "signupDate": { "type": "string", "maxLength": 20 },
+        "clientType": { "type": "string", "enum": ["Empresa", "Autónomo", "Organismo Público", "Particular"] },
+        "status": { "type": "string", "enum": ["activo", "inactivo", "potencial"] },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "archived": { "type": "boolean" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "name", "taxId", "clientType", "status", "archived", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Communication": {
+      "title": "Communication",
+      "description": "Logged communication with a client.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "channel": { "type": "string", "enum": ["Email", "Teléfono", "Reunión", "Videollamada", "Presencial"] },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "summary": { "type": "string", "maxLength": 3000 },
+        "date": { "type": "string", "maxLength": 20 },
+        "authorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "clientId", "channel", "subject", "date", "authorUid", "authorName", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Client project or job with budgets, hours, costs, and status.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clientName": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "service": { "type": "string", "maxLength": 120 },
+        "startDate": { "type": "string", "maxLength": 20 },
+        "estimatedEndDate": { "type": "string", "maxLength": 20 },
+        "actualEndDate": { "type": "string", "maxLength": 20 },
+        "responsibleUid": { "type": "string", "maxLength": 128 },
+        "responsibleName": { "type": "string", "maxLength": 120 },
+        "hoursSpent": { "type": "number" },
+        "internalCost": { "type": "number" },
+        "budgetedPrice": { "type": "number" },
+        "invoicedAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Pendiente", "En proceso", "Esperando al cliente", "En revisión", "Finalizado", "Facturado"] },
+        "quoteId": { "type": "string", "maxLength": 128 },
+        "invoiceId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "name", "clientId", "clientName", "status", "hoursSpent", "internalCost", "budgetedPrice", "invoicedAmount", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Task, follow-up, meeting, or calendar event linked to clients or projects.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "dueDate": { "type": "string", "maxLength": 20 },
+        "priority": { "type": "string", "enum": ["Baja", "Media", "Alta", "Urgente"] },
+        "responsibleUid": { "type": "string", "maxLength": 128 },
+        "responsibleName": { "type": "string", "maxLength": 120 },
+        "clientId": { "type": "string", "maxLength": 128 },
+        "clientName": { "type": "string", "maxLength": 160 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "enum": ["Tarea", "Reunión", "Entrega", "Seguimiento", "Cobro", "Fiscal"] },
+        "status": { "type": "string", "enum": ["Pendiente", "En curso", "Completada"] },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "title", "dueDate", "priority", "category", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "ProjectComment": {
+      "title": "ProjectComment",
+      "description": "Tracking entry or comment on a project.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "hoursLogged": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "projectId", "authorUid", "authorName", "text", "hoursLogged", "createdAt"]
+    },
+    "Quote": {
+      "title": "Quote",
+      "description": "Commercial quote / presupuesto convertible to project and invoice.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "number": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "series": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clientName": { "type": "string", "maxLength": 160 },
+        "clientTaxId": { "type": "string", "maxLength": 24 },
+        "issueDate": { "type": "string", "maxLength": 20 },
+        "validUntil": { "type": "string", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["borrador", "enviado", "aceptado", "rechazado", "caducado"] },
+        "lines": { "type": "array" },
+        "taxBase": { "type": "number" },
+        "vatAmount": { "type": "number" },
+        "retentionRate": { "type": "number" },
+        "retentionAmount": { "type": "number" },
+        "total": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 3000 },
+        "convertedProjectId": { "type": "string", "maxLength": 128 },
+        "convertedInvoiceId": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "number", "series", "clientId", "clientName", "issueDate", "validUntil", "status", "lines", "taxBase", "vatAmount", "retentionAmount", "total", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Issued invoice with series ordering, immutability lock, and VERI*FACTU hash chaining.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "number": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "series": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "sequenceNumber": { "type": "number" },
+        "issueDate": { "type": "string", "maxLength": 20 },
+        "dueDate": { "type": "string", "maxLength": 20 },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clientName": { "type": "string", "maxLength": 160 },
+        "clientTaxId": { "type": "string", "maxLength": 24 },
+        "clientAddress": { "type": "string", "maxLength": 300 },
+        "lines": { "type": "array" },
+        "taxBase": { "type": "number" },
+        "vatAmount": { "type": "number" },
+        "retentionRate": { "type": "number" },
+        "retentionAmount": { "type": "number" },
+        "total": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Borrador", "Emitida", "Pendiente de cobro", "Parcialmente cobrada", "Cobrada", "Vencida", "Rectificada"] },
+        "locked": { "type": "boolean" },
+        "rectifiesInvoiceId": { "type": "string", "maxLength": 128 },
+        "rectificationReason": { "type": "string", "maxLength": 500 },
+        "verifactuHash": { "type": "string", "maxLength": 128 },
+        "verifactuPrevHash": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "quoteId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 3000 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "number", "series", "sequenceNumber", "issueDate", "dueDate", "clientId", "clientName", "clientTaxId", "lines", "taxBase", "vatAmount", "retentionAmount", "total", "paidAmount", "status", "locked", "createdBy", "createdAt", "updatedAt"]
+    },
+    "InvoicePayment": {
+      "title": "InvoicePayment",
+      "description": "Payment collection record linked to an issued invoice.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "invoiceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "invoiceNumber": { "type": "string", "maxLength": 40 },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "amount": { "type": "number" },
+        "paymentDate": { "type": "string", "maxLength": 20 },
+        "method": { "type": "string", "enum": ["Transferencia", "Domiciliación", "Tarjeta", "Efectivo", "Otro"] },
+        "reference": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "invoiceId", "invoiceNumber", "clientId", "amount", "paymentDate", "method", "createdBy", "createdAt"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Supplier / vendor record for received invoices and expenses.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "taxId": { "type": "string", "minLength": 4, "maxLength": 24 },
+        "address": { "type": "string", "maxLength": 240 },
+        "contactPerson": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 160 },
+        "category": { "type": "string", "maxLength": 80 },
+        "paymentTerms": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 3000 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "name", "taxId", "category", "createdBy", "createdAt", "updatedAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Received invoice or business expense record.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "supplierName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "supplierTaxId": { "type": "string", "maxLength": 24 },
+        "invoiceNumber": { "type": "string", "maxLength": 60 },
+        "date": { "type": "string", "maxLength": 20 },
+        "concept": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "taxBase": { "type": "number" },
+        "vatRate": { "type": "number" },
+        "vatAmount": { "type": "number" },
+        "total": { "type": "number" },
+        "category": { "type": "string", "enum": ["Alquiler", "Suministros", "Software y suscripciones", "Publicidad", "Material", "Transporte", "Telecomunicaciones", "Servicios profesionales", "Seguros", "Nóminas", "Otros"] },
+        "paymentDate": { "type": "string", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["Pendiente", "Pagado"] },
+        "clientId": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "documentId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "supplierName", "date", "concept", "taxBase", "vatRate", "vatAmount", "total", "category", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "FiscalObligation": {
+      "title": "FiscalObligation",
+      "description": "Configurable Spanish tax filing model obligation (Modelo 303, 130, 111, etc.).",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "modelCode": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "modelName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "applicable": { "type": "boolean" },
+        "fiscalYear": { "type": "number" },
+        "period": { "type": "string", "maxLength": 40 },
+        "dueDate": { "type": "string", "maxLength": 20 },
+        "requiredDocs": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["Pendiente de preparar", "Preparando", "Documentación incompleta", "Listo para gestor", "Enviado al gestor", "Revisado", "Presentado", "Justificante archivado"] },
+        "responsibleName": { "type": "string", "maxLength": 120 },
+        "submissionDate": { "type": "string", "maxLength": 20 },
+        "receiptDocumentId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "modelCode", "modelName", "applicable", "fiscalYear", "period", "dueDate", "status", "createdAt", "updatedAt"]
+    },
+    "GestoriaPackage": {
+      "title": "GestoriaPackage",
+      "description": "Quarterly closing dossier and delivery record for the external tax advisor (gestor).",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "fiscalYear": { "type": "number" },
+        "quarter": { "type": "string", "enum": ["1T", "2T", "3T", "4T"] },
+        "status": { "type": "string", "enum": ["Preparado para revisión", "Enviado al gestor", "Recibido por gestor"] },
+        "sentDate": { "type": "string", "maxLength": 20 },
+        "recipientName": { "type": "string", "maxLength": 120 },
+        "recipientEmail": { "type": "string", "maxLength": 160 },
+        "observations": { "type": "string", "maxLength": 2000 },
+        "issuedBase": { "type": "number" },
+        "issuedVat": { "type": "number" },
+        "receivedBase": { "type": "number" },
+        "receivedVat": { "type": "number" },
+        "issuedCount": { "type": "number" },
+        "expensesCount": { "type": "number" },
+        "missingDocsCount": { "type": "number" },
+        "incidences": { "type": "array" },
+        "receiptDocumentId": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "fiscalYear", "quarter", "status", "issuedBase", "issuedVat", "receivedBase", "receivedVat", "issuedCount", "expensesCount", "missingDocsCount", "createdBy", "createdAt", "updatedAt"]
+    },
+    "DocumentRecord": {
+      "title": "DocumentRecord",
+      "description": "Centralized digital archive document metadata.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "folder": { "type": "string", "enum": ["Empresa", "Clientes", "Proveedores", "Bancos", "Personal", "Hacienda", "Gestoría", "Seguros", "Contratos", "Otros"] },
+        "uploadDate": { "type": "string", "maxLength": 20 },
+        "clientId": { "type": "string", "maxLength": 128 },
+        "clientName": { "type": "string", "maxLength": 160 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "invoiceId": { "type": "string", "maxLength": 128 },
+        "expenseId": { "type": "string", "maxLength": 128 },
+        "docType": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "mimeType": { "type": "string", "maxLength": 120 },
+        "fileSize": { "type": "number" },
+        "chunkCount": { "type": "number" },
+        "tags": { "type": "array" },
+        "uploadedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "uploadedByName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "name", "folder", "uploadDate", "docType", "mimeType", "fileSize", "chunkCount", "uploadedByUid", "uploadedByName", "createdAt"]
+    },
+    "DocumentChunk": {
+      "title": "DocumentChunk",
+      "description": "Binary base64 chunk for stored files under 450KB per Firestore document.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "index": { "type": "number" },
+        "data": { "type": "string", "maxLength": 700000 }
+      },
+      "required": ["orgId", "index", "data"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Immutable audit trail of enterprise operations.",
+      "type": "object",
+      "properties": {
+        "orgId": { "type": "string", "pattern": "^gestion360-main$", "maxLength": 32 },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "actorRole": { "type": "string", "maxLength": 40 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "module": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "entityLabel": { "type": "string", "maxLength": 200 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orgId", "actorUid", "actorName", "actorRole", "action", "module", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/usersPublic/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public staff directory without PII."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profile with PII and RBAC role."
+    },
+    "/userInvites/{inviteId}": {
+      "schema": { "$ref": "#/entities/UserInvite" },
+      "description": "Pre-assigned user invitations managed by Administrators."
+    },
+    "/companySettings/{settingId}": {
+      "schema": { "$ref": "#/entities/CompanySettings" },
+      "description": "Company fiscal, banking, and gestoría configuration."
+    },
+    "/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "CRM clients directory."
+    },
+    "/communications/{commId}": {
+      "schema": { "$ref": "#/entities/Communication" },
+      "description": "Client communications log."
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Client jobs and projects."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Tasks, reminders, meetings, and calendar items."
+    },
+    "/projectComments/{commentId}": {
+      "schema": { "$ref": "#/entities/ProjectComment" },
+      "description": "Project tracking logs and comments."
+    },
+    "/quotes/{quoteId}": {
+      "schema": { "$ref": "#/entities/Quote" },
+      "description": "Commercial quotes / presupuestos."
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Issued invoices with immutability and VERI*FACTU hash chaining."
+    },
+    "/invoicePayments/{paymentId}": {
+      "schema": { "$ref": "#/entities/InvoicePayment" },
+      "description": "Collections and payments linked to issued invoices."
+    },
+    "/suppliers/{supplierId}": {
+      "schema": { "$ref": "#/entities/Supplier" },
+      "description": "Suppliers directory."
+    },
+    "/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Received invoices and business expenses."
+    },
+    "/fiscalObligations/{obligationId}": {
+      "schema": { "$ref": "#/entities/FiscalObligation" },
+      "description": "Configurable Spanish tax model calendar."
+    },
+    "/gestoriaPackages/{packageId}": {
+      "schema": { "$ref": "#/entities/GestoriaPackage" },
+      "description": "Quarterly closing packages and gestoría submission logs."
+    },
+    "/documents/{documentId}": {
+      "schema": { "$ref": "#/entities/DocumentRecord" },
+      "description": "Centralized document archive metadata."
+    },
+    "/documents/{documentId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/DocumentChunk" },
+      "description": "Chunked binary base64 payloads for stored documents."
+    },
+    "/activityLogs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "Audit log of actions across modules."
+    }
+  }
+}

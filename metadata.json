@@ -1,0 +1,6 @@
+{
+  "name": "GESTIÓN360",
+  "description": "Plataforma integral de gestión empresarial, CRM, proyectos, presupuestos, facturación, contabilidad y cierre fiscal para Hacienda y Gestoría.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

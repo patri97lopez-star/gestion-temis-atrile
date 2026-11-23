@@ -1,0 +1,764 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Pillar 4.1: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Global Hardened Primitives
+    // ---------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isRootAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'patri97lopez@gmail.com';
+    }
+
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isActiveStaff() {
+      return isRootAdmin() || (isVerifiedUser() && hasUserDoc() && userDoc().active == true);
+    }
+
+    function staffRole() {
+      return isRootAdmin() ? 'Administrador' : userDoc().role;
+    }
+
+    function isAdmin() {
+      return isRootAdmin() || (isActiveStaff() && staffRole() == 'Administrador');
+    }
+
+    function isFinanceOrAdmin() {
+      return isActiveStaff() && staffRole() in ['Administrador', 'Administración'];
+    }
+
+    function isCommercialOrAbove() {
+      return isActiveStaff() && staffRole() in ['Administrador', 'Administración', 'Comercial'];
+    }
+
+    function isTechOrAbove() {
+      return isActiveStaff() && staffRole() in ['Administrador', 'Administración', 'Técnico'];
+    }
+
+    function isOperator() {
+      return isActiveStaff() && staffRole() in ['Administrador', 'Administración', 'Comercial', 'Técnico'];
+    }
+
+    function isValidOrg(data) {
+      return data.orgId is string && data.orgId == 'gestion360-main';
+    }
+
+    function isValidRole(role) {
+      return role in ['Administrador', 'Administración', 'Comercial', 'Técnico', 'Consulta'];
+    }
+
+    function isOptString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isOptNumber(data, key) {
+      return !(key in data) || (data[key] is number);
+    }
+
+    function isBoundedStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    // ---------------------------------------------------------
+    // Entity Validation Blueprints
+    // ---------------------------------------------------------
+    function isValidUserPublic(data, userId) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['uid', 'displayName', 'role', 'active', 'orgId', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'role', 'department', 'active', 'orgId', 'updatedAt']) &&
+        data.uid is string && data.uid == userId && data.uid.size() <= 128 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+        data.role is string && isValidRole(data.role) &&
+        data.active is bool &&
+        isOptString(data, 'department', 80) &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'active', 'orgId', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'phone', 'department', 'role', 'active', 'orgId', 'createdAt', 'updatedAt']) &&
+        data.uid is string && data.uid == userId && data.uid.size() <= 128 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+        data.role is string && isValidRole(data.role) &&
+        data.active is bool &&
+        isOptString(data, 'phone', 32) &&
+        isOptString(data, 'department', 80) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidUserInvite(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['email', 'displayName', 'role', 'active', 'invitedBy', 'orgId', 'createdAt']) &&
+        data.keys().hasOnly(['email', 'displayName', 'role', 'department', 'active', 'invitedBy', 'orgId', 'createdAt']) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+        data.role is string && isValidRole(data.role) &&
+        data.active is bool &&
+        data.invitedBy is string && data.invitedBy.size() >= 1 && data.invitedBy.size() <= 128 &&
+        isOptString(data, 'department', 80) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidCompanySettings(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'tradeName', 'legalName', 'taxId', 'currentFiscalYear', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'tradeName', 'legalName', 'taxId', 'fiscalAddress', 'postalCode',
+          'city', 'province', 'phone', 'email', 'iban', 'bankName', 'logoDataUrl',
+          'invoiceSeries', 'vatRates', 'retentionRates', 'currentFiscalYear',
+          'gestorName', 'gestorFirm', 'gestorEmail', 'gestorPhone',
+          'notifyDaysBeforeDue', 'notifyFiscalDaysBefore', 'updatedAt'
+        ]) &&
+        data.tradeName is string && data.tradeName.size() >= 1 && data.tradeName.size() <= 120 &&
+        data.legalName is string && data.legalName.size() >= 1 && data.legalName.size() <= 160 &&
+        data.taxId is string && data.taxId.size() >= 5 && data.taxId.size() <= 24 &&
+        data.currentFiscalYear is number && data.currentFiscalYear >= 2000 && data.currentFiscalYear <= 2100 &&
+        isOptString(data, 'fiscalAddress', 240) &&
+        isOptString(data, 'postalCode', 16) &&
+        isOptString(data, 'city', 80) &&
+        isOptString(data, 'province', 80) &&
+        isOptString(data, 'phone', 32) &&
+        isOptString(data, 'email', 160) &&
+        isOptString(data, 'iban', 40) &&
+        isOptString(data, 'bankName', 80) &&
+        isOptString(data, 'logoDataUrl', 200000) &&
+        isOptString(data, 'gestorName', 120) &&
+        isOptString(data, 'gestorFirm', 120) &&
+        isOptString(data, 'gestorEmail', 160) &&
+        isOptString(data, 'gestorPhone', 32) &&
+        isOptNumber(data, 'notifyDaysBeforeDue') &&
+        isOptNumber(data, 'notifyFiscalDaysBefore') &&
+        (!('invoiceSeries' in data) || (data.invoiceSeries is list && data.invoiceSeries.size() <= 15)) &&
+        (!('vatRates' in data) || (data.vatRates is list && data.vatRates.size() <= 10)) &&
+        (!('retentionRates' in data) || (data.retentionRates is list && data.retentionRates.size() <= 10)) &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidClient(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'name', 'taxId', 'clientType', 'status', 'archived', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'name', 'taxId', 'fiscalAddress', 'postalCode', 'city', 'province',
+          'phone', 'email', 'contactPerson', 'signupDate', 'clientType', 'status',
+          'notes', 'archived', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+        data.taxId is string && data.taxId.size() >= 4 && data.taxId.size() <= 24 &&
+        data.clientType in ['Empresa', 'Autónomo', 'Organismo Público', 'Particular'] &&
+        data.status in ['activo', 'inactivo', 'potencial'] &&
+        data.archived is bool &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'fiscalAddress', 240) &&
+        isOptString(data, 'postalCode', 16) &&
+        isOptString(data, 'city', 80) &&
+        isOptString(data, 'province', 80) &&
+        isOptString(data, 'phone', 32) &&
+        isOptString(data, 'email', 160) &&
+        isOptString(data, 'contactPerson', 120) &&
+        isOptString(data, 'signupDate', 20) &&
+        isOptString(data, 'notes', 4000) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidCommunication(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'clientId', 'channel', 'subject', 'date', 'authorUid', 'authorName', 'createdAt']) &&
+        data.keys().hasOnly(['orgId', 'clientId', 'channel', 'subject', 'summary', 'date', 'authorUid', 'authorName', 'createdAt']) &&
+        isValidId(data.clientId) &&
+        data.channel in ['Email', 'Teléfono', 'Reunión', 'Videollamada', 'Presencial'] &&
+        data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 200 &&
+        data.date is string && data.date.size() <= 20 &&
+        data.authorUid is string && data.authorUid == request.auth.uid && data.authorUid.size() <= 128 &&
+        data.authorName is string && data.authorName.size() <= 120 &&
+        isOptString(data, 'summary', 3000) &&
+        data.createdAt == request.time;
+    }
+
+    function isValidProject(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'name', 'clientId', 'clientName', 'status', 'hoursSpent', 'internalCost', 'budgetedPrice', 'invoicedAmount', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'name', 'clientId', 'clientName', 'description', 'service',
+          'startDate', 'estimatedEndDate', 'actualEndDate', 'responsibleUid',
+          'responsibleName', 'hoursSpent', 'internalCost', 'budgetedPrice',
+          'invoicedAmount', 'status', 'quoteId', 'invoiceId', 'notes',
+          'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 180 &&
+        isValidId(data.clientId) &&
+        data.clientName is string && data.clientName.size() <= 160 &&
+        data.status in ['Pendiente', 'En proceso', 'Esperando al cliente', 'En revisión', 'Finalizado', 'Facturado'] &&
+        data.hoursSpent is number && data.hoursSpent >= 0 &&
+        data.internalCost is number && data.internalCost >= 0 &&
+        data.budgetedPrice is number && data.budgetedPrice >= 0 &&
+        data.invoicedAmount is number && data.invoicedAmount >= 0 &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'description', 4000) &&
+        isOptString(data, 'service', 120) &&
+        isOptString(data, 'startDate', 20) &&
+        isOptString(data, 'estimatedEndDate', 20) &&
+        isOptString(data, 'actualEndDate', 20) &&
+        isOptString(data, 'responsibleUid', 128) &&
+        isOptString(data, 'responsibleName', 120) &&
+        isOptString(data, 'quoteId', 128) &&
+        isOptString(data, 'invoiceId', 128) &&
+        isOptString(data, 'notes', 4000) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidTask(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'title', 'dueDate', 'priority', 'category', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'title', 'description', 'dueDate', 'priority', 'responsibleUid',
+          'responsibleName', 'clientId', 'clientName', 'projectId', 'category',
+          'status', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.dueDate is string && data.dueDate.size() <= 20 &&
+        data.priority in ['Baja', 'Media', 'Alta', 'Urgente'] &&
+        data.category in ['Tarea', 'Reunión', 'Entrega', 'Seguimiento', 'Cobro', 'Fiscal'] &&
+        data.status in ['Pendiente', 'En curso', 'Completada'] &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'description', 3000) &&
+        isOptString(data, 'responsibleUid', 128) &&
+        isOptString(data, 'responsibleName', 120) &&
+        isOptString(data, 'clientId', 128) &&
+        isOptString(data, 'clientName', 160) &&
+        isOptString(data, 'projectId', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidProjectComment(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'projectId', 'authorUid', 'authorName', 'text', 'hoursLogged', 'createdAt']) &&
+        data.keys().hasOnly(['orgId', 'projectId', 'authorUid', 'authorName', 'text', 'hoursLogged', 'createdAt']) &&
+        isValidId(data.projectId) &&
+        data.authorUid is string && data.authorUid == request.auth.uid && data.authorUid.size() <= 128 &&
+        data.authorName is string && data.authorName.size() <= 120 &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
+        data.hoursLogged is number && data.hoursLogged >= 0 &&
+        data.createdAt == request.time;
+    }
+
+    function isValidQuote(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'number', 'series', 'clientId', 'clientName', 'issueDate', 'validUntil', 'status', 'lines', 'taxBase', 'vatAmount', 'retentionAmount', 'total', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'number', 'series', 'clientId', 'clientName', 'clientTaxId',
+          'issueDate', 'validUntil', 'status', 'lines', 'taxBase', 'vatAmount',
+          'retentionRate', 'retentionAmount', 'total', 'notes',
+          'convertedProjectId', 'convertedInvoiceId', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.number is string && data.number.size() >= 1 && data.number.size() <= 40 &&
+        data.series is string && data.series.size() >= 1 && data.series.size() <= 16 &&
+        isValidId(data.clientId) &&
+        data.clientName is string && data.clientName.size() <= 160 &&
+        data.issueDate is string && data.issueDate.size() <= 20 &&
+        data.validUntil is string && data.validUntil.size() <= 20 &&
+        data.status in ['borrador', 'enviado', 'aceptado', 'rechazado', 'caducado'] &&
+        data.lines is list && data.lines.size() >= 1 && data.lines.size() <= 50 &&
+        data.taxBase is number &&
+        data.vatAmount is number &&
+        data.retentionAmount is number &&
+        data.total is number &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'clientTaxId', 24) &&
+        isOptNumber(data, 'retentionRate') &&
+        isOptString(data, 'notes', 3000) &&
+        isOptString(data, 'convertedProjectId', 128) &&
+        isOptString(data, 'convertedInvoiceId', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidInvoice(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'number', 'series', 'sequenceNumber', 'issueDate', 'dueDate', 'clientId', 'clientName', 'clientTaxId', 'lines', 'taxBase', 'vatAmount', 'retentionAmount', 'total', 'paidAmount', 'status', 'locked', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'number', 'series', 'sequenceNumber', 'issueDate', 'dueDate',
+          'clientId', 'clientName', 'clientTaxId', 'clientAddress', 'lines',
+          'taxBase', 'vatAmount', 'retentionRate', 'retentionAmount', 'total',
+          'paidAmount', 'status', 'locked', 'rectifiesInvoiceId', 'rectificationReason',
+          'verifactuHash', 'verifactuPrevHash', 'projectId', 'quoteId', 'notes',
+          'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.number is string && data.number.size() >= 1 && data.number.size() <= 40 &&
+        data.series is string && data.series.size() >= 1 && data.series.size() <= 16 &&
+        data.sequenceNumber is number && data.sequenceNumber >= 0 &&
+        data.issueDate is string && data.issueDate.size() <= 20 &&
+        data.dueDate is string && data.dueDate.size() <= 20 &&
+        isValidId(data.clientId) &&
+        data.clientName is string && data.clientName.size() <= 160 &&
+        data.clientTaxId is string && data.clientTaxId.size() <= 24 &&
+        data.lines is list && data.lines.size() >= 1 && data.lines.size() <= 50 &&
+        data.taxBase is number &&
+        data.vatAmount is number &&
+        data.retentionAmount is number &&
+        data.total is number &&
+        data.paidAmount is number && data.paidAmount >= 0 &&
+        data.status in ['Borrador', 'Emitida', 'Pendiente de cobro', 'Parcialmente cobrada', 'Cobrada', 'Vencida', 'Rectificada'] &&
+        data.locked is bool &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'clientAddress', 300) &&
+        isOptNumber(data, 'retentionRate') &&
+        isOptString(data, 'rectifiesInvoiceId', 128) &&
+        isOptString(data, 'rectificationReason', 500) &&
+        isOptString(data, 'verifactuHash', 128) &&
+        isOptString(data, 'verifactuPrevHash', 128) &&
+        isOptString(data, 'projectId', 128) &&
+        isOptString(data, 'quoteId', 128) &&
+        isOptString(data, 'notes', 3000) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidInvoicePayment(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'invoiceId', 'invoiceNumber', 'clientId', 'amount', 'paymentDate', 'method', 'createdBy', 'createdAt']) &&
+        data.keys().hasOnly(['orgId', 'invoiceId', 'invoiceNumber', 'clientId', 'amount', 'paymentDate', 'method', 'reference', 'notes', 'createdBy', 'createdAt']) &&
+        isValidId(data.invoiceId) &&
+        data.invoiceNumber is string && data.invoiceNumber.size() <= 40 &&
+        isValidId(data.clientId) &&
+        data.amount is number && data.amount > 0 &&
+        data.paymentDate is string && data.paymentDate.size() <= 20 &&
+        data.method in ['Transferencia', 'Domiciliación', 'Tarjeta', 'Efectivo', 'Otro'] &&
+        data.createdBy is string && data.createdBy == request.auth.uid && data.createdBy.size() <= 128 &&
+        isOptString(data, 'reference', 120) &&
+        isOptString(data, 'notes', 500) &&
+        data.createdAt == request.time;
+    }
+
+    function isValidSupplier(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'name', 'taxId', 'category', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['orgId', 'name', 'taxId', 'address', 'contactPerson', 'phone', 'email', 'category', 'paymentTerms', 'notes', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+        data.taxId is string && data.taxId.size() >= 4 && data.taxId.size() <= 24 &&
+        data.category is string && data.category.size() <= 80 &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'address', 240) &&
+        isOptString(data, 'contactPerson', 120) &&
+        isOptString(data, 'phone', 32) &&
+        isOptString(data, 'email', 160) &&
+        isOptString(data, 'paymentTerms', 120) &&
+        isOptString(data, 'notes', 3000) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidExpense(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'supplierName', 'date', 'concept', 'taxBase', 'vatRate', 'vatAmount', 'total', 'category', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'supplierId', 'supplierName', 'supplierTaxId', 'invoiceNumber',
+          'date', 'concept', 'taxBase', 'vatRate', 'vatAmount', 'total',
+          'category', 'paymentDate', 'status', 'clientId', 'projectId',
+          'documentId', 'notes', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.supplierName is string && data.supplierName.size() >= 1 && data.supplierName.size() <= 160 &&
+        data.date is string && data.date.size() <= 20 &&
+        data.concept is string && data.concept.size() >= 1 && data.concept.size() <= 240 &&
+        data.taxBase is number && data.taxBase >= 0 &&
+        data.vatRate is number && data.vatRate >= 0 &&
+        data.vatAmount is number && data.vatAmount >= 0 &&
+        data.total is number && data.total >= 0 &&
+        data.category in ['Alquiler', 'Suministros', 'Software y suscripciones', 'Publicidad', 'Material', 'Transporte', 'Telecomunicaciones', 'Servicios profesionales', 'Seguros', 'Nóminas', 'Otros'] &&
+        data.status in ['Pendiente', 'Pagado'] &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'supplierId', 128) &&
+        isOptString(data, 'supplierTaxId', 24) &&
+        isOptString(data, 'invoiceNumber', 60) &&
+        isOptString(data, 'paymentDate', 20) &&
+        isOptString(data, 'clientId', 128) &&
+        isOptString(data, 'projectId', 128) &&
+        isOptString(data, 'documentId', 128) &&
+        isOptString(data, 'notes', 2000) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidFiscalObligation(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'modelCode', 'modelName', 'applicable', 'fiscalYear', 'period', 'dueDate', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['orgId', 'modelCode', 'modelName', 'applicable', 'fiscalYear', 'period', 'dueDate', 'requiredDocs', 'status', 'responsibleName', 'submissionDate', 'receiptDocumentId', 'notes', 'createdAt', 'updatedAt']) &&
+        data.modelCode is string && data.modelCode.size() >= 1 && data.modelCode.size() <= 40 &&
+        data.modelName is string && data.modelName.size() >= 1 && data.modelName.size() <= 160 &&
+        data.applicable is bool &&
+        data.fiscalYear is number && data.fiscalYear >= 2000 && data.fiscalYear <= 2100 &&
+        data.period is string && data.period.size() <= 40 &&
+        data.dueDate is string && data.dueDate.size() <= 20 &&
+        data.status in ['Pendiente de preparar', 'Preparando', 'Documentación incompleta', 'Listo para gestor', 'Enviado al gestor', 'Revisado', 'Presentado', 'Justificante archivado'] &&
+        isOptString(data, 'requiredDocs', 500) &&
+        isOptString(data, 'responsibleName', 120) &&
+        isOptString(data, 'submissionDate', 20) &&
+        isOptString(data, 'receiptDocumentId', 128) &&
+        isOptString(data, 'notes', 2000) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidGestoriaPackage(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'fiscalYear', 'quarter', 'status', 'issuedBase', 'issuedVat', 'receivedBase', 'receivedVat', 'issuedCount', 'expensesCount', 'missingDocsCount', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'fiscalYear', 'quarter', 'status', 'sentDate', 'recipientName',
+          'recipientEmail', 'observations', 'issuedBase', 'issuedVat', 'receivedBase',
+          'receivedVat', 'issuedCount', 'expensesCount', 'missingDocsCount',
+          'incidences', 'receiptDocumentId', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.fiscalYear is number && data.fiscalYear >= 2000 && data.fiscalYear <= 2100 &&
+        data.quarter in ['1T', '2T', '3T', '4T'] &&
+        data.status in ['Preparado para revisión', 'Enviado al gestor', 'Recibido por gestor'] &&
+        data.issuedBase is number &&
+        data.issuedVat is number &&
+        data.receivedBase is number &&
+        data.receivedVat is number &&
+        data.issuedCount is number &&
+        data.expensesCount is number &&
+        data.missingDocsCount is number &&
+        data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+        isOptString(data, 'sentDate', 20) &&
+        isOptString(data, 'recipientName', 120) &&
+        isOptString(data, 'recipientEmail', 160) &&
+        isOptString(data, 'observations', 2000) &&
+        isOptString(data, 'receiptDocumentId', 128) &&
+        (!('incidences' in data) || isBoundedStringList(data.incidences, 30)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidDocumentRecord(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'name', 'folder', 'uploadDate', 'docType', 'mimeType', 'fileSize', 'chunkCount', 'uploadedByUid', 'uploadedByName', 'createdAt']) &&
+        data.keys().hasOnly([
+          'orgId', 'name', 'folder', 'uploadDate', 'clientId', 'clientName',
+          'supplierId', 'projectId', 'invoiceId', 'expenseId', 'docType',
+          'description', 'mimeType', 'fileSize', 'chunkCount', 'tags',
+          'uploadedByUid', 'uploadedByName', 'createdAt'
+        ]) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 200 &&
+        data.folder in ['Empresa', 'Clientes', 'Proveedores', 'Bancos', 'Personal', 'Hacienda', 'Gestoría', 'Seguros', 'Contratos', 'Otros'] &&
+        data.uploadDate is string && data.uploadDate.size() <= 20 &&
+        data.docType is string && data.docType.size() <= 80 &&
+        data.mimeType is string && data.mimeType.size() <= 120 &&
+        data.fileSize is number && data.fileSize >= 0 && data.fileSize <= 5000000 &&
+        data.chunkCount is number && data.chunkCount >= 0 && data.chunkCount <= 12 &&
+        data.uploadedByUid is string && data.uploadedByUid.size() <= 128 &&
+        data.uploadedByName is string && data.uploadedByName.size() <= 120 &&
+        isOptString(data, 'clientId', 128) &&
+        isOptString(data, 'clientName', 160) &&
+        isOptString(data, 'supplierId', 128) &&
+        isOptString(data, 'projectId', 128) &&
+        isOptString(data, 'invoiceId', 128) &&
+        isOptString(data, 'expenseId', 128) &&
+        isOptString(data, 'description', 1000) &&
+        (!('tags' in data) || isBoundedStringList(data.tags, 10)) &&
+        data.createdAt == request.time;
+    }
+
+    function isValidDocumentChunk(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'index', 'data']) &&
+        data.keys().hasOnly(['orgId', 'index', 'data']) &&
+        data.index is number && data.index >= 0 && data.index < 12 &&
+        data.data is string && data.data.size() <= 700000;
+    }
+
+    function inviteDocPath() {
+      return /databases/$(database)/documents/userInvites/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_'));
+    }
+
+    function hasMatchingActiveInvite(targetRole) {
+      return exists(inviteDocPath()) &&
+        get(inviteDocPath()).data.email.lower() == request.auth.token.email.lower() &&
+        get(inviteDocPath()).data.active == true &&
+        get(inviteDocPath()).data.role == targetRole;
+    }
+
+    function isValidActivityLog(data) {
+      return isValidOrg(data) &&
+        data.keys().hasAll(['orgId', 'actorUid', 'actorName', 'actorRole', 'action', 'module', 'createdAt']) &&
+        data.keys().hasOnly(['orgId', 'actorUid', 'actorName', 'actorRole', 'action', 'module', 'entityId', 'entityLabel', 'details', 'createdAt']) &&
+        data.actorUid is string && data.actorUid == request.auth.uid && data.actorUid.size() <= 128 &&
+        data.actorName is string && data.actorName.size() <= 120 &&
+        data.actorRole is string && data.actorRole.size() <= 40 &&
+        data.action is string && data.action.size() >= 1 && data.action.size() <= 120 &&
+        data.module is string && data.module.size() >= 1 && data.module.size() <= 60 &&
+        isOptString(data, 'entityId', 128) &&
+        isOptString(data, 'entityLabel', 200) &&
+        isOptString(data, 'details', 1000) &&
+        data.createdAt == request.time;
+    }
+
+    // ---------------------------------------------------------
+    // Collection Rules
+    // ---------------------------------------------------------
+
+    // Connection check doc
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // Non-PII Staff Directory
+    match /usersPublic/{userId} {
+      allow get: if isValidId(userId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(userId) && isVerifiedUser() && isValidUserPublic(incoming(), userId) && (
+        isAdmin() ||
+        (request.auth.uid == userId && incoming().active == true && (
+          incoming().role == 'Consulta' ||
+          hasMatchingActiveInvite(incoming().role)
+        ))
+      );
+      allow update: if isValidId(userId) && isVerifiedUser() && isValidUserPublic(incoming(), userId) && (
+        isAdmin() ||
+        (request.auth.uid == userId && incoming().role == existing().role && incoming().active == existing().active && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'department', 'updatedAt']))
+      );
+      allow delete: if isValidId(userId) && isAdmin() && userId != request.auth.uid;
+    }
+
+    // Private User Profiles (PII Isolated)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isVerifiedUser() && (request.auth.uid == userId || isAdmin());
+      allow list: if isVerifiedUser() && (existing().uid == request.auth.uid || isRootAdmin());
+      allow create: if isValidId(userId) && isVerifiedUser() && isValidUserProfile(incoming(), userId) && incoming().createdAt == request.time && (
+        isRootAdmin() ||
+        isAdmin() ||
+        (request.auth.uid == userId && incoming().active == true && (
+          incoming().role == 'Consulta' ||
+          hasMatchingActiveInvite(incoming().role)
+        ))
+      );
+      allow update: if isValidId(userId) && isVerifiedUser() && isValidUserProfile(incoming(), userId) && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        (request.auth.uid == userId && incoming().role == existing().role && incoming().active == existing().active && incoming().email == existing().email && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'department', 'updatedAt']))
+      );
+      allow delete: if isValidId(userId) && isAdmin() && userId != request.auth.uid;
+    }
+
+    // Pre-approved Staff Invites
+    match /userInvites/{inviteId} {
+      allow get: if isValidId(inviteId) && isVerifiedUser() && (isAdmin() || existing().email == request.auth.token.email);
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main' && (isRootAdmin() || existing().email == request.auth.token.email);
+      allow create: if isValidId(inviteId) && isAdmin() && isValidUserInvite(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(inviteId) && isAdmin() && isValidUserInvite(incoming()) && incoming().createdAt == existing().createdAt && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'department', 'active']);
+      allow delete: if isValidId(inviteId) && isAdmin();
+    }
+
+    // Company Fiscal & System Settings
+    match /companySettings/{settingId} {
+      allow get: if isValidId(settingId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create, update: if isValidId(settingId) && isAdmin() && isValidCompanySettings(incoming());
+      allow delete: if false;
+    }
+
+    // Clients CRM
+    match /clients/{clientId} {
+      allow get: if isValidId(clientId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(clientId) && isCommercialOrAbove() && isValidClient(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
+      allow update: if isValidId(clientId) && isCommercialOrAbove() && isValidClient(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'taxId', 'fiscalAddress', 'postalCode', 'city', 'province', 'phone', 'email', 'contactPerson', 'signupDate', 'clientType', 'status', 'notes', 'archived', 'updatedAt'])
+      );
+      allow delete: if isValidId(clientId) && isAdmin();
+    }
+
+    // Client Communications
+    match /communications/{commId} {
+      allow get: if isValidId(commId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(commId) && isCommercialOrAbove() && isValidCommunication(incoming()) && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow update: if false;
+      allow delete: if isValidId(commId) && isAdmin();
+    }
+
+    // Projects & Jobs
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(projectId) && isOperator() && isValidProject(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow update: if isValidId(projectId) && isOperator() && isValidProject(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'clientId', 'clientName', 'description', 'service', 'startDate', 'estimatedEndDate', 'actualEndDate', 'responsibleUid', 'responsibleName', 'hoursSpent', 'internalCost', 'budgetedPrice', 'invoicedAmount', 'status', 'quoteId', 'invoiceId', 'notes', 'updatedAt'])
+      );
+      allow delete: if isValidId(projectId) && isAdmin();
+    }
+
+    // Tasks & Calendar Events
+    match /tasks/{taskId} {
+      allow get: if isValidId(taskId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(taskId) && isOperator() && isValidTask(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
+      allow update: if isValidId(taskId) && isOperator() && isValidTask(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'dueDate', 'priority', 'responsibleUid', 'responsibleName', 'clientId', 'clientName', 'projectId', 'category', 'status', 'updatedAt'])
+      );
+      allow delete: if isValidId(taskId) && isOperator();
+    }
+
+    // Project Comments & Hour Logs
+    match /projectComments/{commentId} {
+      allow get: if isValidId(commentId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(commentId) && isTechOrAbove() && isValidProjectComment(incoming()) && exists(/databases/$(database)/documents/projects/$(incoming().projectId));
+      allow update: if false;
+      allow delete: if isValidId(commentId) && isAdmin();
+    }
+
+    // Quotes / Presupuestos
+    match /quotes/{quoteId} {
+      allow get: if isValidId(quoteId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(quoteId) && isCommercialOrAbove() && isValidQuote(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow update: if isValidId(quoteId) && isCommercialOrAbove() && isValidQuote(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        (existing().status in ['borrador', 'enviado'] && incoming().diff(existing()).affectedKeys().hasOnly(['number', 'series', 'clientId', 'clientName', 'clientTaxId', 'issueDate', 'validUntil', 'status', 'lines', 'taxBase', 'vatAmount', 'retentionRate', 'retentionAmount', 'total', 'notes', 'updatedAt'])) ||
+        (existing().status == 'aceptado' && incoming().diff(existing()).affectedKeys().hasOnly(['convertedProjectId', 'convertedInvoiceId', 'updatedAt']))
+      );
+      allow delete: if isValidId(quoteId) && isFinanceOrAdmin() && existing().status == 'borrador';
+    }
+
+    // Issued Invoices (Protected by Ley Antifraude / Immutability Lock)
+    match /invoices/{invoiceId} {
+      allow get: if isValidId(invoiceId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(invoiceId) && isFinanceOrAdmin() && isValidInvoice(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow update: if isValidId(invoiceId) && isFinanceOrAdmin() && isValidInvoice(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        // Drafts can be edited or issued
+        (existing().locked == false && incoming().diff(existing()).affectedKeys().hasOnly([
+          'number', 'series', 'sequenceNumber', 'issueDate', 'dueDate', 'clientId',
+          'clientName', 'clientTaxId', 'clientAddress', 'lines', 'taxBase', 'vatAmount',
+          'retentionRate', 'retentionAmount', 'total', 'paidAmount', 'status', 'locked',
+          'verifactuHash', 'verifactuPrevHash', 'projectId', 'quoteId', 'notes', 'updatedAt'
+        ])) ||
+        // Locked definitive invoices can ONLY update collection status/paidAmount or mark as Rectificada
+        (existing().locked == true && incoming().locked == true && incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'updatedAt']))
+      );
+      // Definitive locked invoices can NEVER be deleted
+      allow delete: if isValidId(invoiceId) && isAdmin() && existing().locked == false;
+    }
+
+    // Invoice Payments
+    match /invoicePayments/{paymentId} {
+      allow get: if isValidId(paymentId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(paymentId) && isFinanceOrAdmin() && isValidInvoicePayment(incoming()) && exists(/databases/$(database)/documents/invoices/$(incoming().invoiceId));
+      allow update: if false;
+      allow delete: if isValidId(paymentId) && isAdmin();
+    }
+
+    // Suppliers
+    match /suppliers/{supplierId} {
+      allow get: if isValidId(supplierId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(supplierId) && isFinanceOrAdmin() && isValidSupplier(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
+      allow update: if isValidId(supplierId) && isFinanceOrAdmin() && isValidSupplier(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'taxId', 'address', 'contactPerson', 'phone', 'email', 'category', 'paymentTerms', 'notes', 'updatedAt'])
+      );
+      allow delete: if isValidId(supplierId) && isAdmin();
+    }
+
+    // Expenses & Received Invoices
+    match /expenses/{expenseId} {
+      allow get: if isValidId(expenseId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(expenseId) && isFinanceOrAdmin() && isValidExpense(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
+      allow update: if isValidId(expenseId) && isFinanceOrAdmin() && isValidExpense(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['supplierId', 'supplierName', 'supplierTaxId', 'invoiceNumber', 'date', 'concept', 'taxBase', 'vatRate', 'vatAmount', 'total', 'category', 'paymentDate', 'status', 'clientId', 'projectId', 'documentId', 'notes', 'updatedAt'])
+      );
+      allow delete: if isValidId(expenseId) && isAdmin();
+    }
+
+    // Fiscal Obligations (Hacienda)
+    match /fiscalObligations/{obligationId} {
+      allow get: if isValidId(obligationId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(obligationId) && isFinanceOrAdmin() && isValidFiscalObligation(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(obligationId) && isFinanceOrAdmin() && isValidFiscalObligation(incoming()) && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['applicable', 'period', 'dueDate', 'requiredDocs', 'status', 'responsibleName', 'submissionDate', 'receiptDocumentId', 'notes', 'updatedAt'])
+      );
+      allow delete: if isValidId(obligationId) && isAdmin();
+    }
+
+    // Gestoria Quarterly Packages
+    match /gestoriaPackages/{packageId} {
+      allow get: if isValidId(packageId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(packageId) && isFinanceOrAdmin() && isValidGestoriaPackage(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
+      allow update: if isValidId(packageId) && isFinanceOrAdmin() && isValidGestoriaPackage(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'sentDate', 'recipientName', 'recipientEmail', 'observations', 'receiptDocumentId', 'updatedAt'])
+      );
+      allow delete: if isValidId(packageId) && isAdmin();
+    }
+
+    // Document Archive
+    match /documents/{documentId} {
+      allow get: if isValidId(documentId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(documentId) && isOperator() && isValidDocumentRecord(incoming()) && incoming().uploadedByUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if isValidId(documentId) && isFinanceOrAdmin();
+
+      match /chunks/{chunkId} {
+        allow get: if isValidId(documentId) && isValidId(chunkId) && isActiveStaff();
+        allow list: if isValidId(documentId) && isVerifiedUser() && existing().orgId == 'gestion360-main';
+        allow create: if isValidId(documentId) && isValidId(chunkId) && isOperator() && isValidDocumentChunk(incoming()) && existsAfter(/databases/$(database)/documents/documents/$(documentId));
+        allow update: if false;
+        allow delete: if isValidId(documentId) && isValidId(chunkId) && isFinanceOrAdmin();
+      }
+    }
+
+    // Immutable Activity Audit Log
+    match /activityLogs/{logId} {
+      allow get: if isValidId(logId) && isActiveStaff();
+      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
+      allow create: if isValidId(logId) && isActiveStaff() && isValidActivityLog(incoming());
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
