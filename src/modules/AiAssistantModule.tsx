@@ -45,7 +45,7 @@ const SUGGESTED_PROMPTS = [
 ];
 
 export const AiAssistantModule: React.FC = () => {
-  const { firebaseUser, profile, permissions, getIdToken } = useAuth();
+  const { operatorUid, profile, permissions, getIdToken } = useAuth();
   const {
     companySettings,
     clients,
@@ -375,7 +375,7 @@ export const AiAssistantModule: React.FC = () => {
 
   const handleConfirmOcrSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ocrForm || !ocrFile || !firebaseUser || !profile) return;
+    if (!ocrForm || !ocrFile) return;
     if (!permissions.canWriteExpenses || !permissions.canWriteDocuments) {
       notify('error', 'Tu rol no tiene permisos para registrar gastos y documentos.');
       return;
@@ -396,8 +396,8 @@ export const AiAssistantModule: React.FC = () => {
         clientId: ocrForm.clientId || undefined,
         projectId: ocrForm.projectId || undefined,
         tags: ['OCR', ocrForm.category],
-        uploadedByUid: firebaseUser.uid,
-        uploadedByName: profile.displayName,
+        uploadedByUid: operatorUid,
+        uploadedByName: profile?.displayName || 'Dirección · Temis Atrile',
       });
 
       await saveExpense({

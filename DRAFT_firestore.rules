@@ -2,13 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Pillar 4.1: Global default-deny safety net
+    // Global default-deny safety net
     match /{document=**} {
       allow read, write: if false;
     }
 
     // ---------------------------------------------------------
-    // Global Hardened Primitives
+    // Global Validation Primitives
     // ---------------------------------------------------------
     function isValidId(id) {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
@@ -20,54 +20,6 @@ service cloud.firestore {
 
     function existing() {
       return resource.data;
-    }
-
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
-    function isRootAdmin() {
-      return isVerifiedUser() && request.auth.token.email == 'patri97lopez@gmail.com';
-    }
-
-    function hasUserDoc() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-
-    function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function isActiveStaff() {
-      return isRootAdmin() || (isVerifiedUser() && hasUserDoc() && userDoc().active == true);
-    }
-
-    function staffRole() {
-      return isRootAdmin() ? 'Administrador' : userDoc().role;
-    }
-
-    function isAdmin() {
-      return isRootAdmin() || (isActiveStaff() && staffRole() == 'Administrador');
-    }
-
-    function isFinanceOrAdmin() {
-      return isActiveStaff() && staffRole() in ['Administrador', 'Administración'];
-    }
-
-    function isCommercialOrAbove() {
-      return isActiveStaff() && staffRole() in ['Administrador', 'Administración', 'Comercial'];
-    }
-
-    function isTechOrAbove() {
-      return isActiveStaff() && staffRole() in ['Administrador', 'Administración', 'Técnico'];
-    }
-
-    function isOperator() {
-      return isActiveStaff() && staffRole() in ['Administrador', 'Administración', 'Comercial', 'Técnico'];
     }
 
     function isValidOrg(data) {
@@ -88,6 +40,10 @@ service cloud.firestore {
 
     function isBoundedStringList(arr, maxLen) {
       return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    function isOrgReadable() {
+      return resource == null || existing().orgId == 'gestion360-main';
     }
 
     // ---------------------------------------------------------
@@ -203,7 +159,7 @@ service cloud.firestore {
         data.channel in ['Email', 'Teléfono', 'Reunión', 'Videollamada', 'Presencial'] &&
         data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 200 &&
         data.date is string && data.date.size() <= 20 &&
-        data.authorUid is string && data.authorUid == request.auth.uid && data.authorUid.size() <= 128 &&
+        isValidId(data.authorUid) &&
         data.authorName is string && data.authorName.size() <= 120 &&
         isOptString(data, 'summary', 3000) &&
         data.createdAt == request.time;
@@ -271,7 +227,7 @@ service cloud.firestore {
         data.keys().hasAll(['orgId', 'projectId', 'authorUid', 'authorName', 'text', 'hoursLogged', 'createdAt']) &&
         data.keys().hasOnly(['orgId', 'projectId', 'authorUid', 'authorName', 'text', 'hoursLogged', 'createdAt']) &&
         isValidId(data.projectId) &&
-        data.authorUid is string && data.authorUid == request.auth.uid && data.authorUid.size() <= 128 &&
+        isValidId(data.authorUid) &&
         data.authorName is string && data.authorName.size() <= 120 &&
         data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
         data.hoursLogged is number && data.hoursLogged >= 0 &&
@@ -360,7 +316,7 @@ service cloud.firestore {
         data.amount is number && data.amount > 0 &&
         data.paymentDate is string && data.paymentDate.size() <= 20 &&
         data.method in ['Transferencia', 'Domiciliación', 'Tarjeta', 'Efectivo', 'Otro'] &&
-        data.createdBy is string && data.createdBy == request.auth.uid && data.createdBy.size() <= 128 &&
+        isValidId(data.createdBy) &&
         isOptString(data, 'reference', 120) &&
         isOptString(data, 'notes', 500) &&
         data.createdAt == request.time;
@@ -481,7 +437,7 @@ service cloud.firestore {
         data.mimeType is string && data.mimeType.size() <= 120 &&
         data.fileSize is number && data.fileSize >= 0 && data.fileSize <= 5000000 &&
         data.chunkCount is number && data.chunkCount >= 0 && data.chunkCount <= 12 &&
-        data.uploadedByUid is string && data.uploadedByUid.size() <= 128 &&
+        isValidId(data.uploadedByUid) &&
         data.uploadedByName is string && data.uploadedByName.size() <= 120 &&
         isOptString(data, 'clientId', 128) &&
         isOptString(data, 'clientName', 160) &&
@@ -502,22 +458,11 @@ service cloud.firestore {
         data.data is string && data.data.size() <= 700000;
     }
 
-    function inviteDocPath() {
-      return /databases/$(database)/documents/userInvites/$(request.auth.token.email.lower().replace('[^a-z0-9]', '_'));
-    }
-
-    function hasMatchingActiveInvite(targetRole) {
-      return exists(inviteDocPath()) &&
-        get(inviteDocPath()).data.email.lower() == request.auth.token.email.lower() &&
-        get(inviteDocPath()).data.active == true &&
-        get(inviteDocPath()).data.role == targetRole;
-    }
-
     function isValidActivityLog(data) {
       return isValidOrg(data) &&
         data.keys().hasAll(['orgId', 'actorUid', 'actorName', 'actorRole', 'action', 'module', 'createdAt']) &&
         data.keys().hasOnly(['orgId', 'actorUid', 'actorName', 'actorRole', 'action', 'module', 'entityId', 'entityLabel', 'details', 'createdAt']) &&
-        data.actorUid is string && data.actorUid == request.auth.uid && data.actorUid.size() <= 128 &&
+        isValidId(data.actorUid) &&
         data.actorName is string && data.actorName.size() <= 120 &&
         data.actorRole is string && data.actorRole.size() <= 40 &&
         data.action is string && data.action.size() >= 1 && data.action.size() <= 120 &&
@@ -529,234 +474,182 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------
-    // Collection Rules
+    // Collection Rules (Direct Workspace Access Without Login)
     // ---------------------------------------------------------
 
     // Connection check doc
     match /test/connection {
-      allow get: if isSignedIn();
+      allow get: if request.time != null;
     }
 
-    // Non-PII Staff Directory
+    // Staff Directory
     match /usersPublic/{userId} {
-      allow get: if isValidId(userId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(userId) && isVerifiedUser() && isValidUserPublic(incoming(), userId) && (
-        isAdmin() ||
-        (request.auth.uid == userId && incoming().active == true && (
-          incoming().role == 'Consulta' ||
-          hasMatchingActiveInvite(incoming().role)
-        ))
-      );
-      allow update: if isValidId(userId) && isVerifiedUser() && isValidUserPublic(incoming(), userId) && (
-        isAdmin() ||
-        (request.auth.uid == userId && incoming().role == existing().role && incoming().active == existing().active && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'department', 'updatedAt']))
-      );
-      allow delete: if isValidId(userId) && isAdmin() && userId != request.auth.uid;
+      allow get: if isValidId(userId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(userId) && isValidUserPublic(incoming(), userId);
+      allow update: if isValidId(userId) && isValidUserPublic(incoming(), userId);
+      allow delete: if isValidId(userId) && existing().orgId == 'gestion360-main';
     }
 
-    // Private User Profiles (PII Isolated)
+    // User Profiles
     match /users/{userId} {
-      allow get: if isValidId(userId) && isVerifiedUser() && (request.auth.uid == userId || isAdmin());
-      allow list: if isVerifiedUser() && (existing().uid == request.auth.uid || isRootAdmin());
-      allow create: if isValidId(userId) && isVerifiedUser() && isValidUserProfile(incoming(), userId) && incoming().createdAt == request.time && (
-        isRootAdmin() ||
-        isAdmin() ||
-        (request.auth.uid == userId && incoming().active == true && (
-          incoming().role == 'Consulta' ||
-          hasMatchingActiveInvite(incoming().role)
-        ))
-      );
-      allow update: if isValidId(userId) && isVerifiedUser() && isValidUserProfile(incoming(), userId) && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        (request.auth.uid == userId && incoming().role == existing().role && incoming().active == existing().active && incoming().email == existing().email && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'department', 'updatedAt']))
-      );
-      allow delete: if isValidId(userId) && isAdmin() && userId != request.auth.uid;
+      allow get: if isValidId(userId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(userId) && isValidUserProfile(incoming(), userId) && incoming().createdAt == request.time;
+      allow update: if isValidId(userId) && isValidUserProfile(incoming(), userId) && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(userId) && existing().orgId == 'gestion360-main';
     }
 
-    // Pre-approved Staff Invites
+    // Staff Invites
     match /userInvites/{inviteId} {
-      allow get: if isValidId(inviteId) && isVerifiedUser() && (isAdmin() || existing().email == request.auth.token.email);
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main' && (isRootAdmin() || existing().email == request.auth.token.email);
-      allow create: if isValidId(inviteId) && isAdmin() && isValidUserInvite(incoming()) && incoming().createdAt == request.time;
-      allow update: if isValidId(inviteId) && isAdmin() && isValidUserInvite(incoming()) && incoming().createdAt == existing().createdAt && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'department', 'active']);
-      allow delete: if isValidId(inviteId) && isAdmin();
+      allow get: if isValidId(inviteId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(inviteId) && isValidUserInvite(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(inviteId) && isValidUserInvite(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(inviteId) && existing().orgId == 'gestion360-main';
     }
 
     // Company Fiscal & System Settings
     match /companySettings/{settingId} {
-      allow get: if isValidId(settingId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create, update: if isValidId(settingId) && isAdmin() && isValidCompanySettings(incoming());
+      allow get: if isValidId(settingId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create, update: if isValidId(settingId) && isValidCompanySettings(incoming());
       allow delete: if false;
     }
 
     // Clients CRM
     match /clients/{clientId} {
-      allow get: if isValidId(clientId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(clientId) && isCommercialOrAbove() && isValidClient(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
-      allow update: if isValidId(clientId) && isCommercialOrAbove() && isValidClient(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'taxId', 'fiscalAddress', 'postalCode', 'city', 'province', 'phone', 'email', 'contactPerson', 'signupDate', 'clientType', 'status', 'notes', 'archived', 'updatedAt'])
-      );
-      allow delete: if isValidId(clientId) && isAdmin();
+      allow get: if isValidId(clientId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(clientId) && isValidClient(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(clientId) && isValidClient(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(clientId) && existing().orgId == 'gestion360-main';
     }
 
     // Client Communications
     match /communications/{commId} {
-      allow get: if isValidId(commId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(commId) && isCommercialOrAbove() && isValidCommunication(incoming()) && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow get: if isValidId(commId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(commId) && isValidCommunication(incoming()) && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
       allow update: if false;
-      allow delete: if isValidId(commId) && isAdmin();
+      allow delete: if isValidId(commId) && existing().orgId == 'gestion360-main';
     }
 
     // Projects & Jobs
     match /projects/{projectId} {
-      allow get: if isValidId(projectId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(projectId) && isOperator() && isValidProject(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
-      allow update: if isValidId(projectId) && isOperator() && isValidProject(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'clientId', 'clientName', 'description', 'service', 'startDate', 'estimatedEndDate', 'actualEndDate', 'responsibleUid', 'responsibleName', 'hoursSpent', 'internalCost', 'budgetedPrice', 'invoicedAmount', 'status', 'quoteId', 'invoiceId', 'notes', 'updatedAt'])
-      );
-      allow delete: if isValidId(projectId) && isAdmin();
+      allow get: if isValidId(projectId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(projectId) && isValidProject(incoming()) && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow update: if isValidId(projectId) && isValidProject(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(projectId) && existing().orgId == 'gestion360-main';
     }
 
     // Tasks & Calendar Events
     match /tasks/{taskId} {
-      allow get: if isValidId(taskId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(taskId) && isOperator() && isValidTask(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
-      allow update: if isValidId(taskId) && isOperator() && isValidTask(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'dueDate', 'priority', 'responsibleUid', 'responsibleName', 'clientId', 'clientName', 'projectId', 'category', 'status', 'updatedAt'])
-      );
-      allow delete: if isValidId(taskId) && isOperator();
+      allow get: if isValidId(taskId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(taskId) && isValidTask(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(taskId) && isValidTask(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(taskId) && existing().orgId == 'gestion360-main';
     }
 
     // Project Comments & Hour Logs
     match /projectComments/{commentId} {
-      allow get: if isValidId(commentId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(commentId) && isTechOrAbove() && isValidProjectComment(incoming()) && exists(/databases/$(database)/documents/projects/$(incoming().projectId));
+      allow get: if isValidId(commentId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(commentId) && isValidProjectComment(incoming()) && exists(/databases/$(database)/documents/projects/$(incoming().projectId));
       allow update: if false;
-      allow delete: if isValidId(commentId) && isAdmin();
+      allow delete: if isValidId(commentId) && existing().orgId == 'gestion360-main';
     }
 
     // Quotes / Presupuestos
     match /quotes/{quoteId} {
-      allow get: if isValidId(quoteId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(quoteId) && isCommercialOrAbove() && isValidQuote(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
-      allow update: if isValidId(quoteId) && isCommercialOrAbove() && isValidQuote(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        (existing().status in ['borrador', 'enviado'] && incoming().diff(existing()).affectedKeys().hasOnly(['number', 'series', 'clientId', 'clientName', 'clientTaxId', 'issueDate', 'validUntil', 'status', 'lines', 'taxBase', 'vatAmount', 'retentionRate', 'retentionAmount', 'total', 'notes', 'updatedAt'])) ||
-        (existing().status == 'aceptado' && incoming().diff(existing()).affectedKeys().hasOnly(['convertedProjectId', 'convertedInvoiceId', 'updatedAt']))
-      );
-      allow delete: if isValidId(quoteId) && isFinanceOrAdmin() && existing().status == 'borrador';
+      allow get: if isValidId(quoteId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(quoteId) && isValidQuote(incoming()) && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow update: if isValidId(quoteId) && isValidQuote(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(quoteId) && existing().orgId == 'gestion360-main' && existing().status == 'borrador';
     }
 
     // Issued Invoices (Protected by Ley Antifraude / Immutability Lock)
     match /invoices/{invoiceId} {
-      allow get: if isValidId(invoiceId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(invoiceId) && isFinanceOrAdmin() && isValidInvoice(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
-      allow update: if isValidId(invoiceId) && isFinanceOrAdmin() && isValidInvoice(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        // Drafts can be edited or issued
-        (existing().locked == false && incoming().diff(existing()).affectedKeys().hasOnly([
-          'number', 'series', 'sequenceNumber', 'issueDate', 'dueDate', 'clientId',
-          'clientName', 'clientTaxId', 'clientAddress', 'lines', 'taxBase', 'vatAmount',
-          'retentionRate', 'retentionAmount', 'total', 'paidAmount', 'status', 'locked',
-          'verifactuHash', 'verifactuPrevHash', 'projectId', 'quoteId', 'notes', 'updatedAt'
-        ])) ||
-        // Locked definitive invoices can ONLY update collection status/paidAmount or mark as Rectificada
+      allow get: if isValidId(invoiceId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(invoiceId) && isValidInvoice(incoming()) && incoming().createdAt == request.time && exists(/databases/$(database)/documents/clients/$(incoming().clientId));
+      allow update: if isValidId(invoiceId) && isValidInvoice(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
+        existing().locked == false ||
         (existing().locked == true && incoming().locked == true && incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'updatedAt']))
       );
-      // Definitive locked invoices can NEVER be deleted
-      allow delete: if isValidId(invoiceId) && isAdmin() && existing().locked == false;
+      allow delete: if isValidId(invoiceId) && existing().orgId == 'gestion360-main' && existing().locked == false;
     }
 
     // Invoice Payments
     match /invoicePayments/{paymentId} {
-      allow get: if isValidId(paymentId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(paymentId) && isFinanceOrAdmin() && isValidInvoicePayment(incoming()) && exists(/databases/$(database)/documents/invoices/$(incoming().invoiceId));
+      allow get: if isValidId(paymentId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(paymentId) && isValidInvoicePayment(incoming()) && exists(/databases/$(database)/documents/invoices/$(incoming().invoiceId));
       allow update: if false;
-      allow delete: if isValidId(paymentId) && isAdmin();
+      allow delete: if isValidId(paymentId) && existing().orgId == 'gestion360-main';
     }
 
     // Suppliers
     match /suppliers/{supplierId} {
-      allow get: if isValidId(supplierId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(supplierId) && isFinanceOrAdmin() && isValidSupplier(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
-      allow update: if isValidId(supplierId) && isFinanceOrAdmin() && isValidSupplier(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'taxId', 'address', 'contactPerson', 'phone', 'email', 'category', 'paymentTerms', 'notes', 'updatedAt'])
-      );
-      allow delete: if isValidId(supplierId) && isAdmin();
+      allow get: if isValidId(supplierId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(supplierId) && isValidSupplier(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(supplierId) && isValidSupplier(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(supplierId) && existing().orgId == 'gestion360-main';
     }
 
     // Expenses & Received Invoices
     match /expenses/{expenseId} {
-      allow get: if isValidId(expenseId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(expenseId) && isFinanceOrAdmin() && isValidExpense(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
-      allow update: if isValidId(expenseId) && isFinanceOrAdmin() && isValidExpense(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['supplierId', 'supplierName', 'supplierTaxId', 'invoiceNumber', 'date', 'concept', 'taxBase', 'vatRate', 'vatAmount', 'total', 'category', 'paymentDate', 'status', 'clientId', 'projectId', 'documentId', 'notes', 'updatedAt'])
-      );
-      allow delete: if isValidId(expenseId) && isAdmin();
+      allow get: if isValidId(expenseId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(expenseId) && isValidExpense(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(expenseId) && isValidExpense(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(expenseId) && existing().orgId == 'gestion360-main';
     }
 
     // Fiscal Obligations (Hacienda)
     match /fiscalObligations/{obligationId} {
-      allow get: if isValidId(obligationId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(obligationId) && isFinanceOrAdmin() && isValidFiscalObligation(incoming()) && incoming().createdAt == request.time;
-      allow update: if isValidId(obligationId) && isFinanceOrAdmin() && isValidFiscalObligation(incoming()) && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['applicable', 'period', 'dueDate', 'requiredDocs', 'status', 'responsibleName', 'submissionDate', 'receiptDocumentId', 'notes', 'updatedAt'])
-      );
-      allow delete: if isValidId(obligationId) && isAdmin();
+      allow get: if isValidId(obligationId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(obligationId) && isValidFiscalObligation(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(obligationId) && isValidFiscalObligation(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(obligationId) && existing().orgId == 'gestion360-main';
     }
 
     // Gestoria Quarterly Packages
     match /gestoriaPackages/{packageId} {
-      allow get: if isValidId(packageId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(packageId) && isFinanceOrAdmin() && isValidGestoriaPackage(incoming()) && incoming().createdBy == request.auth.uid && incoming().createdAt == request.time;
-      allow update: if isValidId(packageId) && isFinanceOrAdmin() && isValidGestoriaPackage(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt && (
-        isAdmin() ||
-        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'sentDate', 'recipientName', 'recipientEmail', 'observations', 'receiptDocumentId', 'updatedAt'])
-      );
-      allow delete: if isValidId(packageId) && isAdmin();
+      allow get: if isValidId(packageId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(packageId) && isValidGestoriaPackage(incoming()) && incoming().createdAt == request.time;
+      allow update: if isValidId(packageId) && isValidGestoriaPackage(incoming()) && incoming().createdBy == existing().createdBy && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(packageId) && existing().orgId == 'gestion360-main';
     }
 
     // Document Archive
     match /documents/{documentId} {
-      allow get: if isValidId(documentId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(documentId) && isOperator() && isValidDocumentRecord(incoming()) && incoming().uploadedByUid == request.auth.uid;
+      allow get: if isValidId(documentId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(documentId) && isValidDocumentRecord(incoming());
       allow update: if false;
-      allow delete: if isValidId(documentId) && isFinanceOrAdmin();
+      allow delete: if isValidId(documentId) && existing().orgId == 'gestion360-main';
 
       match /chunks/{chunkId} {
-        allow get: if isValidId(documentId) && isValidId(chunkId) && isActiveStaff();
-        allow list: if isValidId(documentId) && isVerifiedUser() && existing().orgId == 'gestion360-main';
-        allow create: if isValidId(documentId) && isValidId(chunkId) && isOperator() && isValidDocumentChunk(incoming()) && existsAfter(/databases/$(database)/documents/documents/$(documentId));
+        allow get: if isValidId(documentId) && isValidId(chunkId) && isOrgReadable();
+        allow list: if isValidId(documentId) && existing().orgId == 'gestion360-main';
+        allow create: if isValidId(documentId) && isValidId(chunkId) && isValidDocumentChunk(incoming()) && existsAfter(/databases/$(database)/documents/documents/$(documentId));
         allow update: if false;
-        allow delete: if isValidId(documentId) && isValidId(chunkId) && isFinanceOrAdmin();
+        allow delete: if isValidId(documentId) && isValidId(chunkId) && existing().orgId == 'gestion360-main';
       }
     }
 
     // Immutable Activity Audit Log
     match /activityLogs/{logId} {
-      allow get: if isValidId(logId) && isActiveStaff();
-      allow list: if isVerifiedUser() && existing().orgId == 'gestion360-main';
-      allow create: if isValidId(logId) && isActiveStaff() && isValidActivityLog(incoming());
+      allow get: if isValidId(logId) && isOrgReadable();
+      allow list: if existing().orgId == 'gestion360-main';
+      allow create: if isValidId(logId) && isValidActivityLog(incoming());
       allow update: if false;
       allow delete: if false;
     }

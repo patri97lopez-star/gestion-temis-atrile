@@ -73,7 +73,7 @@ export const UsersSecurityModule: React.FC = () => {
     e.preventDefault();
     if (!permissions.canManageUsers) return;
     if (!inviteForm.email.trim() || !inviteForm.displayName.trim()) {
-      notify('error', 'Indica nombre y correo electrónico de Google.');
+      notify('error', 'Indica nombre y correo electrónico.');
       return;
     }
     setInviting(true);
@@ -181,10 +181,10 @@ export const UsersSecurityModule: React.FC = () => {
         <div className="bg-white border border-[#ECEEEB] rounded-lg p-5 space-y-2.5">
           <div className="flex items-center gap-2 text-[#203C35]">
             <KeyRound className="w-4 h-4 text-[#C6A879]" />
-            <h2 className="text-sm font-semibold">Autenticación y recuperación</h2>
+            <h2 className="text-sm font-semibold">Acceso directo y trazabilidad</h2>
           </div>
           <p className="text-xs text-[#252B28]/75 leading-relaxed">
-            El acceso se realiza mediante Google Sign-In con correo verificado. La recuperación de contraseña y verificación en dos pasos se gestionan directamente desde tu cuenta de Google.
+            El espacio abre directamente en el panel de gestión sin pantalla de inicio de sesión. Las operaciones del asistente IA y OCR se verifican mediante sesión temporal firmada en el servidor, y las facturas emitidas quedan bloqueadas con registro de auditoría.
           </p>
         </div>
 
@@ -340,7 +340,7 @@ export const UsersSecurityModule: React.FC = () => {
               <form onSubmit={handleInvite} className="space-y-3">
                 <div>
                   <label className="block text-[11px] font-medium text-[#252B28]/70 mb-1">
-                    Correo electrónico Google *
+                    Correo electrónico *
                   </label>
                   <input
                     type="email"

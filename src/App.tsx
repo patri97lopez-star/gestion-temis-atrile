@@ -13,7 +13,6 @@ import {
   FolderArchive,
   Landmark,
   LayoutDashboard,
-  LogOut,
   Menu,
   Receipt,
   Scale,
@@ -164,8 +163,8 @@ const NAV_GROUPS: NavGroup[] = [
 
 const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
-const AuthenticatedShell: React.FC = () => {
-  const { profile, signOut } = useAuth();
+const WorkspaceShell: React.FC = () => {
+  const { profile, connectionOk } = useAuth();
   const { companySettings } = useErpData();
   const [activeModule, setActiveModule] = useState<ModuleKey>('dashboard');
   const [pendingAction, setPendingAction] = useState<string | undefined>(undefined);
@@ -287,15 +286,6 @@ const AuthenticatedShell: React.FC = () => {
             <p className="text-xs font-medium text-[#F8F8F5] truncate">{profile?.displayName}</p>
             <p className="text-[11px] text-[#C6A879] truncate">{profile?.role}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => signOut()}
-            title="Cerrar sesión"
-            aria-label="Cerrar sesión"
-            className="p-1.5 rounded-md text-[#F8F8F5]/70 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </div>
     </div>
@@ -355,7 +345,15 @@ const AuthenticatedShell: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto space-y-4">
+          {!connectionOk && (
+            <div className="p-3 bg-white border border-amber-300 rounded-md text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                No se pudo confirmar la conectividad inicial con Firestore. Verifica tu conexión a internet para sincronizar los cambios.
+              </span>
+            </div>
+          )}
           {renderModule()}
         </main>
       </div>
@@ -365,115 +363,12 @@ const AuthenticatedShell: React.FC = () => {
   );
 };
 
-const AuthGate: React.FC = () => {
-  const { firebaseUser, profile, authReady, connectionOk, authError, signInWithGoogle, signOut } =
-    useAuth();
-  const [signingIn, setSigningIn] = useState(false);
-
-  if (!authReady) {
-    return (
-      <div className="min-h-screen bg-[#F8F8F5] flex items-center justify-center p-6">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 rounded-md bg-[#203C35] text-[#C6A879] flex items-center justify-center mx-auto font-semibold text-sm">
-            TA
-          </div>
-          <p className="text-xs text-[#252B28]/70">Cargando sesión y espacio corporativo...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!firebaseUser || !profile) {
-    return (
-      <div className="min-h-screen bg-[#F8F8F5] flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white border border-[#ECEEEB] rounded-lg p-8 space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-md bg-[#203C35] flex items-center justify-center shrink-0">
-              <Scale className="w-5 h-5 text-[#C6A879]" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-[#203C35]">Gestión Temis Atrile</h1>
-              <p className="text-xs text-[#252B28]/65">
-                TEMIS ATRILE E.S.P.J. · Gestión Empresarial
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2 text-xs text-[#252B28]/80 leading-relaxed">
-            <p>
-              Inicia sesión con tu cuenta autorizada para acceder a clientes, proyectos, facturación, contabilidad, documentación y cierre trimestral para gestoría.
-            </p>
-          </div>
-
-          {!connectionOk && (
-            <div className="p-3 bg-[#F8F8F5] border border-amber-300 rounded-md text-xs text-amber-800 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>
-                No se pudo confirmar la conectividad inicial con Firestore. Verifica tu conexión antes de continuar.
-              </span>
-            </div>
-          )}
-
-          {authError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-xs text-[#B42318]">
-              {authError}
-            </div>
-          )}
-
-          <button
-            type="button"
-            disabled={signingIn}
-            onClick={async () => {
-              setSigningIn(true);
-              try {
-                await signInWithGoogle();
-              } finally {
-                setSigningIn(false);
-              }
-            }}
-            className="w-full py-2.5 px-4 bg-[#203C35] text-[#F8F8F5] text-xs font-medium rounded-md hover:bg-[#315348] transition-colors disabled:opacity-50"
-          >
-            {signingIn ? 'Verificando credenciales...' : 'Acceder con cuenta de Google'}
-          </button>
-
-          <p className="text-[11px] text-[#252B28]/55 text-center">
-            Acceso protegido mediante verificación de correo y control de permisos por rol.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!profile.active) {
-    return (
-      <div className="min-h-screen bg-[#F8F8F5] flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white border border-[#ECEEEB] rounded-lg p-8 space-y-4 text-center">
-          <AlertTriangle className="w-8 h-8 text-amber-600 mx-auto" />
-          <h2 className="text-base font-semibold text-[#203C35]">Cuenta temporalmente desactivada</h2>
-          <p className="text-xs text-[#252B28]/75 leading-relaxed">
-            Tu acceso a Gestión Temis Atrile ha sido deshabilitado por el administrador de la empresa. Contacta con dirección para reactivar tu perfil.
-          </p>
-          <button
-            type="button"
-            onClick={() => signOut()}
-            className="px-4 py-2 text-xs font-medium bg-[#203C35] text-[#F8F8F5] rounded-md hover:bg-[#315348]"
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return <AuthenticatedShell />;
-};
-
 export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
         <ErpDataProvider>
-          <AuthGate />
+          <WorkspaceShell />
         </ErpDataProvider>
       </AuthProvider>
     </ErrorBoundary>

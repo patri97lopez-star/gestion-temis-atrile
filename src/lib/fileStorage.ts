@@ -7,6 +7,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, ORG_ID } from './firebase';
@@ -141,7 +142,11 @@ export async function uploadGeneratedBlobAsDocument(params: {
 export async function fetchDocumentBytes(documentId: string): Promise<Uint8Array> {
   try {
     const chunksSnap = await getDocs(
-      query(collection(db, 'documents', documentId, 'chunks'), orderBy('index', 'asc'))
+      query(
+        collection(db, 'documents', documentId, 'chunks'),
+        where('orgId', '==', ORG_ID),
+        orderBy('index', 'asc')
+      )
     );
     const base64Combined = chunksSnap.docs
       .map((d) => String((d.data() as { data?: string }).data || ''))
@@ -173,7 +178,9 @@ export async function getDocumentPreviewUrl(docRecord: DocumentRecord): Promise<
 
 export async function deleteDocumentWithChunks(documentId: string): Promise<void> {
   try {
-    const chunksSnap = await getDocs(collection(db, 'documents', documentId, 'chunks'));
+    const chunksSnap = await getDocs(
+      query(collection(db, 'documents', documentId, 'chunks'), where('orgId', '==', ORG_ID))
+    );
     for (const chunkDoc of chunksSnap.docs) {
       await deleteDoc(doc(db, 'documents', documentId, 'chunks', chunkDoc.id));
     }

@@ -117,7 +117,7 @@ interface ErpDataContextValue {
 const ErpDataContext = createContext<ErpDataContextValue | null>(null);
 
 export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { firebaseUser, profile, authReady } = useAuth();
+  const { operatorUid, profile, authReady } = useAuth();
   const [loadingData, setLoadingData] = useState(true);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [usersPublic, setUsersPublic] = useState<UserPublic[]>([]);
@@ -158,12 +158,12 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       entityLabel?: string,
       details?: string
     ) => {
-      if (!firebaseUser || !profile) return;
+      if (!profile) return;
       const logId = createEntityId('log');
       try {
         await setDoc(doc(db, 'activityLogs', logId), {
           orgId: ORG_ID,
-          actorUid: firebaseUser.uid,
+          actorUid: operatorUid,
           actorName: profile.displayName.slice(0, 120),
           actorRole: profile.role,
           action: action.slice(0, 120),
@@ -177,12 +177,12 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // Non-blocking audit log failure should not crash user flow
       }
     },
-    [firebaseUser, profile]
+    [operatorUid, profile]
   );
 
-  // Subscribe to Firestore collections only when authenticated and active
+  // Subscribe to Firestore collections immediately when workspace profile is active
   useEffect(() => {
-    if (!authReady || !firebaseUser || !profile?.active) {
+    if (!authReady || !profile?.active) {
       setLoadingData(false);
       return;
     }
@@ -241,12 +241,12 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [authReady, firebaseUser, profile?.active, profile?.role]);
+  }, [authReady, profile?.active, profile?.role]);
 
-  // Bootstrap initial companySettings/main if root Admin signs in on empty DB,
+  // Bootstrap initial companySettings/main on empty DB,
   // and migrate legacy placeholder defaults if still unchanged
   useEffect(() => {
-    if (!authReady || !firebaseUser || profile?.role !== 'Administrador') return;
+    if (!authReady || profile?.role !== 'Administrador') return;
     if (companySettings === null) {
       const timer = setTimeout(async () => {
         try {
@@ -263,7 +263,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
               city: '',
               province: '',
               phone: '',
-              email: firebaseUser.email || '',
+              email: profile?.email || '',
               iban: '',
               bankName: '',
               invoiceSeries: ['F-2026', 'R-2026'],
@@ -299,7 +299,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // Non-blocking
       });
     }
-  }, [authReady, firebaseUser, profile?.role, companySettings]);
+  }, [authReady, profile?.role, profile?.email, companySettings]);
 
   const saveCompanySettings = useCallback(
     async (data: Omit<CompanySettings, 'id' | 'orgId'>) => {
@@ -323,7 +323,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data: Omit<Client, 'id' | 'orgId' | 'createdBy' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const normalized = normalizeTaxId(data.taxId);
       const duplicate = clients.find(
         (c) => normalizeTaxId(c.taxId) === normalized && c.id !== existingId
@@ -347,7 +346,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ...data,
             taxId: data.taxId.trim().toUpperCase(),
             orgId: ORG_ID,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -359,7 +358,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `clients/${id}`);
       }
     },
-    [firebaseUser, clients, logActivity, notify]
+    [operatorUid, clients, logActivity, notify]
   );
 
   const archiveOrDeleteClient = useCallback(
@@ -402,14 +401,13 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addCommunication = useCallback(
     async (data: Omit<Communication, 'id' | 'orgId' | 'authorUid' | 'authorName' | 'createdAt'>) => {
-      if (!firebaseUser || !profile) throw new Error('No autenticado');
       const id = createEntityId('comm');
       try {
         await setDoc(doc(db, 'communications', id), {
           ...data,
           orgId: ORG_ID,
-          authorUid: firebaseUser.uid,
-          authorName: profile.displayName,
+          authorUid: operatorUid,
+          authorName: profile?.displayName || 'Dirección · Temis Atrile',
           createdAt: serverTimestamp(),
         });
         await logActivity('Registró comunicación con cliente', 'Clientes', data.clientId, data.subject);
@@ -418,7 +416,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, OperationType.CREATE, `communications/${id}`);
       }
     },
-    [firebaseUser, profile, logActivity, notify]
+    [operatorUid, profile?.displayName, logActivity, notify]
   );
 
   const saveProject = useCallback(
@@ -426,7 +424,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data: Omit<Project, 'id' | 'orgId' | 'createdBy' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const id = existingId || createEntityId('prj');
       try {
         if (existingId) {
@@ -440,7 +437,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           await setDoc(doc(db, 'projects', id), {
             ...data,
             orgId: ORG_ID,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -452,7 +449,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `projects/${id}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const deleteProject = useCallback(
@@ -470,14 +467,13 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addProjectComment = useCallback(
     async (projectId: string, text: string, hoursLogged: number) => {
-      if (!firebaseUser || !profile) throw new Error('No autenticado');
       const id = createEntityId('pcom');
       try {
         await setDoc(doc(db, 'projectComments', id), {
           orgId: ORG_ID,
           projectId,
-          authorUid: firebaseUser.uid,
-          authorName: profile.displayName,
+          authorUid: operatorUid,
+          authorName: profile?.displayName || 'Dirección · Temis Atrile',
           text: text.trim().slice(0, 2000),
           hoursLogged: Math.max(0, Number(hoursLogged) || 0),
           createdAt: serverTimestamp(),
@@ -495,7 +491,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, OperationType.CREATE, `projectComments/${id}`);
       }
     },
-    [firebaseUser, profile, projects, logActivity, notify]
+    [operatorUid, profile?.displayName, projects, logActivity, notify]
   );
 
   const saveTask = useCallback(
@@ -503,7 +499,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data: Omit<Task, 'id' | 'orgId' | 'createdBy' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const id = existingId || createEntityId('tsk');
       try {
         if (existingId) {
@@ -516,7 +511,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           await setDoc(doc(db, 'tasks', id), {
             ...data,
             orgId: ORG_ID,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -528,7 +523,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `tasks/${id}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const deleteTask = useCallback(
@@ -548,7 +543,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data: Omit<Quote, 'id' | 'orgId' | 'createdBy' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const id = existingId || createEntityId('quo');
       try {
         if (existingId) {
@@ -562,7 +556,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           await setDoc(doc(db, 'quotes', id), {
             ...data,
             orgId: ORG_ID,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -574,7 +568,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `quotes/${id}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const deleteQuote = useCallback(
@@ -591,7 +585,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const convertQuoteToProject = useCallback(
     async (quote: Quote): Promise<string> => {
-      if (!firebaseUser || !profile) throw new Error('No autenticado');
       const projectId = createEntityId('prj');
       try {
         await setDoc(doc(db, 'projects', projectId), {
@@ -603,8 +596,8 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           service: quote.lines[0]?.description?.slice(0, 120) || 'Servicio presupuestado',
           startDate: todayIso(),
           estimatedEndDate: addDaysIso(todayIso(), 30),
-          responsibleUid: firebaseUser.uid,
-          responsibleName: profile.displayName,
+          responsibleUid: operatorUid,
+          responsibleName: profile?.displayName || 'Dirección · Temis Atrile',
           hoursSpent: 0,
           internalCost: 0,
           budgetedPrice: quote.taxBase,
@@ -612,7 +605,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           status: 'Pendiente',
           quoteId: quote.id,
           notes: quote.notes || '',
-          createdBy: firebaseUser.uid,
+          createdBy: operatorUid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -627,7 +620,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, OperationType.WRITE, `quotes/${quote.id}`);
       }
     },
-    [firebaseUser, profile, logActivity, notify]
+    [operatorUid, profile?.displayName, logActivity, notify]
   );
 
   const getNextSeriesNumber = useCallback(
@@ -649,7 +642,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       existingId?: string,
       issueImmediately = false
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const id = existingId || createEntityId('inv');
 
       let finalPayload: Record<string, unknown> = {
@@ -697,7 +689,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         } else {
           await setDoc(doc(db, 'invoices', id), {
             ...finalPayload,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -726,7 +718,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `invoices/${id}`);
       }
     },
-    [firebaseUser, getNextSeriesNumber, invoices, companySettings?.taxId, projects, logActivity, notify]
+    [operatorUid, getNextSeriesNumber, invoices, companySettings?.taxId, projects, logActivity, notify]
   );
 
   const convertQuoteToInvoice = useCallback(
@@ -805,7 +797,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       reference?: string;
       notes?: string;
     }) => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const { invoice, amount, paymentDate, method, reference, notes } = params;
       const paymentId = createEntityId('pay');
       const newPaid = Math.min(invoice.total, Number((invoice.paidAmount + amount).toFixed(2)));
@@ -824,7 +815,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           method,
           ...(reference ? { reference: reference.slice(0, 120) } : {}),
           ...(notes ? { notes: notes.slice(0, 500) } : {}),
-          createdBy: firebaseUser.uid,
+          createdBy: operatorUid,
           createdAt: serverTimestamp(),
         });
         batch.update(doc(db, 'invoices', invoice.id), {
@@ -845,12 +836,11 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, OperationType.WRITE, `invoices/${invoice.id}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const createRectifyingInvoice = useCallback(
     async (original: Invoice, reason: string): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const rectSeries = `R-${new Date().getFullYear()}`;
       const { sequenceNumber, number } = getNextSeriesNumber(rectSeries);
       const prevSeriesInvoices = invoices
@@ -899,7 +889,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           verifactuPrevHash: prevHash,
           verifactuHash: hash,
           notes: `Rectifica factura ${original.number}: ${reason}`,
-          createdBy: firebaseUser.uid,
+          createdBy: operatorUid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -915,7 +905,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, OperationType.WRITE, `invoices/${rectId}`);
       }
     },
-    [firebaseUser, getNextSeriesNumber, invoices, companySettings?.taxId, logActivity, notify]
+    [operatorUid, getNextSeriesNumber, invoices, companySettings?.taxId, logActivity, notify]
   );
 
   const saveSupplier = useCallback(
@@ -923,7 +913,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data: Omit<Supplier, 'id' | 'orgId' | 'createdBy' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const id = existingId || createEntityId('sup');
       try {
         if (existingId) {
@@ -936,7 +925,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           await setDoc(doc(db, 'suppliers', id), {
             ...data,
             orgId: ORG_ID,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -948,7 +937,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `suppliers/${id}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const deleteSupplier = useCallback(
@@ -969,7 +958,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data: Omit<Expense, 'id' | 'orgId' | 'createdBy' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const id = existingId || createEntityId('exp');
       try {
         if (existingId) {
@@ -982,7 +970,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           await setDoc(doc(db, 'expenses', id), {
             ...data,
             orgId: ORG_ID,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -994,7 +982,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `expenses/${id}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const deleteExpense = useCallback(
@@ -1094,7 +1082,6 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
       data: Omit<GestoriaPackage, 'id' | 'orgId' | 'createdBy' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ): Promise<string> => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const id = existingId || createEntityId('pkg');
       try {
         if (existingId) {
@@ -1108,7 +1095,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           await setDoc(doc(db, 'gestoriaPackages', id), {
             ...data,
             orgId: ORG_ID,
-            createdBy: firebaseUser.uid,
+            createdBy: operatorUid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -1120,12 +1107,11 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, `gestoriaPackages/${id}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const inviteUser = useCallback(
     async (params: { email: string; displayName: string; role: UserRole; department?: string }) => {
-      if (!firebaseUser) throw new Error('No autenticado');
       const inviteId = emailToInviteId(params.email);
       try {
         await setDoc(doc(db, 'userInvites', inviteId), {
@@ -1135,7 +1121,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
           role: params.role,
           department: params.department?.trim() || 'General',
           active: true,
-          invitedBy: firebaseUser.uid,
+          invitedBy: operatorUid,
           createdAt: serverTimestamp(),
         });
         await logActivity('Invitó usuario al equipo', 'Usuarios', inviteId, params.email);
@@ -1144,7 +1130,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, OperationType.WRITE, `userInvites/${inviteId}`);
       }
     },
-    [firebaseUser, logActivity, notify]
+    [operatorUid, logActivity, notify]
   );
 
   const updateStaffRoleAndStatus = useCallback(
@@ -1179,9 +1165,9 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Isolated Demo Sandbox (explicit user-triggered test environment only)
   const loadDemoSandbox = useCallback(async () => {
-    if (!firebaseUser || !profile) throw new Error('No autenticado');
     const year = new Date().getFullYear();
     const month = String(new Date().getMonth() + 1).padStart(2, '0');
+    const actorName = profile?.displayName || 'Dirección · Temis Atrile';
     try {
       const batch = writeBatch(db);
       const cli1 = 'demo_cli_1';
@@ -1202,7 +1188,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         status: 'activo',
         notes: 'Registro de entorno de pruebas independiente.',
         archived: false,
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1222,7 +1208,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         status: 'activo',
         notes: 'Registro de entorno de pruebas independiente.',
         archived: false,
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1236,15 +1222,15 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         service: 'Consultoría Digital',
         startDate: `${year}-${month}-01`,
         estimatedEndDate: addDaysIso(todayIso(), 15),
-        responsibleUid: firebaseUser.uid,
-        responsibleName: profile.displayName,
+        responsibleUid: operatorUid,
+        responsibleName: actorName,
         hoursSpent: 18,
         internalCost: 720,
         budgetedPrice: 3200,
         invoicedAmount: 3200,
         status: 'En proceso',
         notes: 'Entorno de prueba.',
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1274,7 +1260,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         retentionAmount: 0,
         total: 2238.5,
         notes: 'Presupuesto de prueba.',
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1319,7 +1305,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         verifactuHash: hash,
         projectId: 'demo_prj_1',
         notes: 'Factura de prueba del entorno sandbox.',
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1335,7 +1321,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         category: 'Software y suscripciones',
         paymentTerms: 'Domiciliación mensual',
         notes: 'Proveedor de prueba.',
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1356,7 +1342,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         paymentDate: `${year}-${month}-05`,
         status: 'Pagado',
         notes: 'Gasto de prueba sin justificante adjunto (detectable en cierre trimestral).',
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1367,13 +1353,13 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
         description: 'Confirmar segundo pago parcial de la factura DEMO.',
         dueDate: addDaysIso(todayIso(), 3),
         priority: 'Alta',
-        responsibleUid: firebaseUser.uid,
-        responsibleName: profile.displayName,
+        responsibleUid: operatorUid,
+        responsibleName: actorName,
         clientId: cli1,
         clientName: '[DEMO] Arquitectura Norte S.L.',
         category: 'Cobro',
         status: 'Pendiente',
-        createdBy: firebaseUser.uid,
+        createdBy: operatorUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -1384,7 +1370,7 @@ export const ErpDataProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'demo_sandbox');
     }
-  }, [firebaseUser, profile, companySettings?.taxId, logActivity, notify]);
+  }, [operatorUid, profile?.displayName, companySettings?.taxId, logActivity, notify]);
 
   const clearDemoSandbox = useCallback(async () => {
     const demoDocs: Array<[string, string]> = [

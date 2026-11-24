@@ -26,7 +26,7 @@ export const ExpensesAccountingModule: React.FC<{ initialAction?: string; onClea
   initialAction,
   onClearAction,
 }) => {
-  const { permissions, firebaseUser, profile } = useAuth();
+  const { permissions, operatorUid, profile } = useAuth();
   const {
     expenses,
     invoices,
@@ -128,7 +128,7 @@ export const ExpensesAccountingModule: React.FC<{ initialAction?: string; onClea
     setSaving(true);
     try {
       let documentId = editing?.documentId || '';
-      if (attachedFile && firebaseUser && profile) {
+      if (attachedFile) {
         const uploaded = await uploadDocumentToFirestore({
           file: attachedFile,
           folder: 'Proveedores',
@@ -137,8 +137,8 @@ export const ExpensesAccountingModule: React.FC<{ initialAction?: string; onClea
           supplierId: form.supplierId || undefined,
           clientId: form.clientId || undefined,
           projectId: form.projectId || undefined,
-          uploadedByUid: firebaseUser.uid,
-          uploadedByName: profile.displayName,
+          uploadedByUid: operatorUid,
+          uploadedByName: profile?.displayName || 'Dirección · Temis Atrile',
         });
         documentId = uploaded.id;
       }

@@ -1,38 +1,28 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-  type User,
-} from 'firebase/auth';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import {
-  auth,
-  db,
-  googleProvider,
-  handleFirestoreError,
-  OperationType,
-  ORG_ID,
-  ROOT_ADMIN_EMAIL,
-  testConnection,
-} from '../lib/firebase';
-import { emailToInviteId } from '../lib/formatters';
-import {
-  ROLE_PERMISSIONS,
-  type UserInvite,
-  type UserProfile,
-  type UserRole,
-} from '../types/erp';
+import { db, ORG_ID, testConnection } from '../lib/firebase';
+import { ROLE_PERMISSIONS, type UserProfile, type UserRole } from '../types/erp';
+
+export const DEFAULT_OPERATOR_UID = 'temis-atrile-principal';
+
+const DEFAULT_PROFILE: UserProfile = {
+  id: DEFAULT_OPERATOR_UID,
+  uid: DEFAULT_OPERATOR_UID,
+  email: 'administracion@temisatrile.es',
+  displayName: 'Dirección · Temis Atrile',
+  phone: '',
+  department: 'Administración',
+  role: 'Administrador',
+  active: true,
+  orgId: ORG_ID,
+};
 
 interface AuthContextValue {
-  firebaseUser: User | null;
+  operatorUid: string;
   profile: UserProfile | null;
   authReady: boolean;
   connectionOk: boolean;
-  authError: string | null;
   permissions: (typeof ROLE_PERMISSIONS)[UserRole];
-  signInWithGoogle: () => Promise<void>;
-  signOut: () => Promise<void>;
   getIdToken: () => Promise<string>;
   refreshProfile: () => Promise<void>;
 }
@@ -40,194 +30,110 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(DEFAULT_PROFILE);
+  const [authReady] = useState(true);
   const [connectionOk, setConnectionOk] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const sessionTokenRef = useRef<{ token: string; expiresAtMs: number } | null>(null);
 
-  useEffect(() => {
-    testConnection().then((ok) => setConnectionOk(ok));
-  }, []);
+  const syncWorkspaceProfile = useCallback(async (): Promise<UserProfile> => {
+    const userRef = doc(db, 'users', DEFAULT_OPERATOR_UID);
+    const publicRef = doc(db, 'usersPublic', DEFAULT_OPERATOR_UID);
 
-  const ensureUserProfile = useCallback(async (user: User): Promise<UserProfile | null> => {
-    const userRef = doc(db, 'users', user.uid);
-    const publicRef = doc(db, 'usersPublic', user.uid);
-
-    let snap;
     try {
-      snap = await getDoc(userRef);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
-    }
-
-    if (snap.exists()) {
-      const data = snap.data() as Omit<UserProfile, 'id'>;
-      const loaded: UserProfile = { id: snap.id, ...data };
-      // Ensure usersPublic exists for directory dropdowns
-      try {
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const data = snap.data() as Omit<UserProfile, 'id'>;
+        const loaded: UserProfile = { id: snap.id, ...data, active: true };
         const pubSnap = await getDoc(publicRef);
         if (!pubSnap.exists()) {
           await setDoc(publicRef, {
             uid: loaded.uid,
             displayName: loaded.displayName,
             role: loaded.role,
-            department: loaded.department || 'General',
-            active: loaded.active,
+            department: loaded.department || 'Administración',
+            active: true,
             orgId: ORG_ID,
             updatedAt: serverTimestamp(),
           });
         }
-      } catch {
-        // Non-blocking sync
+        return loaded;
       }
-      return loaded;
-    }
 
-    const email = (user.email || '').trim().toLowerCase();
-    const isRoot = email === ROOT_ADMIN_EMAIL.toLowerCase() && user.emailVerified;
-    let resolvedRole: UserRole = isRoot ? 'Administrador' : 'Consulta';
-    let resolvedName = user.displayName || email.split('@')[0] || 'Usuario';
-    let resolvedDept = isRoot ? 'Dirección' : 'General';
+      await setDoc(userRef, {
+        uid: DEFAULT_PROFILE.uid,
+        email: DEFAULT_PROFILE.email,
+        displayName: DEFAULT_PROFILE.displayName,
+        phone: '',
+        department: DEFAULT_PROFILE.department,
+        role: DEFAULT_PROFILE.role,
+        active: true,
+        orgId: ORG_ID,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
-    if (!isRoot && email) {
-      try {
-        const inviteRef = doc(db, 'userInvites', emailToInviteId(email));
-        const inviteSnap = await getDoc(inviteRef);
-        if (inviteSnap.exists()) {
-          const inv = inviteSnap.data() as UserInvite;
-          if (inv.active && inv.email.toLowerCase() === email) {
-            resolvedRole = inv.role;
-            if (inv.displayName) resolvedName = inv.displayName;
-            if (inv.department) resolvedDept = inv.department;
-          }
-        }
-      } catch {
-        // No invite found or not readable; defaults to Consulta
-      }
-    }
-
-    const newProfilePayload = {
-      uid: user.uid,
-      email: user.email || '',
-      displayName: resolvedName.slice(0, 120),
-      phone: '',
-      department: resolvedDept.slice(0, 80),
-      role: resolvedRole,
-      active: true,
-      orgId: ORG_ID,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    try {
-      await setDoc(userRef, newProfilePayload);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`);
-    }
-
-    try {
       await setDoc(publicRef, {
-        uid: user.uid,
-        displayName: resolvedName.slice(0, 120),
-        role: resolvedRole,
-        department: resolvedDept.slice(0, 80),
+        uid: DEFAULT_PROFILE.uid,
+        displayName: DEFAULT_PROFILE.displayName,
+        role: DEFAULT_PROFILE.role,
+        department: DEFAULT_PROFILE.department,
         active: true,
         orgId: ORG_ID,
         updatedAt: serverTimestamp(),
       });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `usersPublic/${user.uid}`);
+    } catch {
+      // Keep active local default workspace profile even if initial profile sync fails
     }
 
-    return {
-      id: user.uid,
-      uid: user.uid,
-      email: user.email || '',
-      displayName: resolvedName,
-      phone: '',
-      department: resolvedDept,
-      role: resolvedRole,
-      active: true,
-      orgId: ORG_ID,
-    };
+    return DEFAULT_PROFILE;
   }, []);
-
-  const refreshProfile = useCallback(async () => {
-    if (!firebaseUser) return;
-    const loaded = await ensureUserProfile(firebaseUser);
-    setProfile(loaded);
-  }, [firebaseUser, ensureUserProfile]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setAuthError(null);
-      setFirebaseUser(user);
-      if (!user) {
-        setProfile(null);
-        setAuthReady(true);
-        return;
-      }
-
-      if (!user.emailVerified) {
-        setAuthError('Tu cuenta de correo debe estar verificada para acceder.');
-        setProfile(null);
-        setAuthReady(true);
-        return;
-      }
-
-      try {
-        const loaded = await ensureUserProfile(user);
-        setProfile(loaded);
-      } catch (err) {
-        setAuthError(
-          err instanceof Error ? err.message : 'No se pudo cargar el perfil de usuario.'
-        );
-      } finally {
-        setAuthReady(true);
+    testConnection().then((ok) => {
+      setConnectionOk(ok);
+      if (ok) {
+        syncWorkspaceProfile().then((loaded) => setProfile(loaded));
       }
     });
-    return () => unsub();
-  }, [ensureUserProfile]);
+  }, [syncWorkspaceProfile]);
 
-  const signInWithGoogle = useCallback(async () => {
-    setAuthError(null);
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'No se pudo completar el inicio de sesión.';
-      setAuthError(msg);
-      throw err;
-    }
-  }, []);
-
-  const signOut = useCallback(async () => {
-    await firebaseSignOut(auth);
-    setProfile(null);
-  }, []);
+  const refreshProfile = useCallback(async () => {
+    const loaded = await syncWorkspaceProfile();
+    setProfile(loaded);
+  }, [syncWorkspaceProfile]);
 
   const getIdToken = useCallback(async (): Promise<string> => {
-    if (!auth.currentUser) {
-      throw new Error('Debes iniciar sesión para realizar esta operación.');
+    const current = sessionTokenRef.current;
+    if (current && Date.now() < current.expiresAtMs - 60_000) {
+      return current.token;
     }
-    return auth.currentUser.getIdToken();
+    const resp = await fetch('/api/session', { method: 'POST' });
+    if (!resp.ok) {
+      throw new Error('No se pudo inicializar la sesión de asistencia con el servidor.');
+    }
+    const payload = (await resp.json()) as { token?: string; expiresInSec?: number };
+    if (!payload.token) {
+      throw new Error('El servidor no devolvió un token de sesión válido.');
+    }
+    const ttlMs = (payload.expiresInSec || 3600) * 1000;
+    sessionTokenRef.current = {
+      token: payload.token,
+      expiresAtMs: Date.now() + ttlMs,
+    };
+    return payload.token;
   }, []);
 
-  const effectiveRole: UserRole = profile?.role || 'Consulta';
-  const permissions = ROLE_PERMISSIONS[effectiveRole] || ROLE_PERMISSIONS.Consulta;
+  const effectiveRole: UserRole = profile?.role || 'Administrador';
+  const permissions = ROLE_PERMISSIONS[effectiveRole] || ROLE_PERMISSIONS.Administrador;
 
   return (
     <AuthContext.Provider
       value={{
-        firebaseUser,
+        operatorUid: DEFAULT_OPERATOR_UID,
         profile,
         authReady,
         connectionOk,
-        authError,
         permissions,
-        signInWithGoogle,
-        signOut,
         getIdToken,
         refreshProfile,
       }}

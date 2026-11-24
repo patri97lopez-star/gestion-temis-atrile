@@ -24,7 +24,7 @@ export const DocumentsModule: React.FC<{ initialAction?: string; onClearAction?:
   initialAction,
   onClearAction,
 }) => {
-  const { permissions, firebaseUser, profile } = useAuth();
+  const { permissions, operatorUid, profile } = useAuth();
   const { documents, clients, projects, invoices, expenses, logActivity, notify } = useErpData();
 
   const [selectedFolder, setSelectedFolder] = useState<string>('todas');
@@ -63,7 +63,7 @@ export const DocumentsModule: React.FC<{ initialAction?: string; onClearAction?:
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !firebaseUser || !profile) {
+    if (!file) {
       notify('error', 'Selecciona un archivo para subir.');
       return;
     }
@@ -87,8 +87,8 @@ export const DocumentsModule: React.FC<{ initialAction?: string; onClearAction?:
         invoiceId: form.invoiceId || undefined,
         expenseId: form.expenseId || undefined,
         tags,
-        uploadedByUid: firebaseUser.uid,
-        uploadedByName: profile.displayName,
+        uploadedByUid: operatorUid,
+        uploadedByName: profile?.displayName || 'Dirección · Temis Atrile',
       });
 
       await logActivity('Subió documento al archivo', 'Documentación', created.id, created.name);

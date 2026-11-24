@@ -9,14 +9,14 @@ interface FirebaseAppletConfig {
   projectId: string;
 }
 
-interface VerifiedFirebaseUser {
+interface VerifiedSessionUser {
   uid: string;
   email: string;
   emailVerified: boolean;
 }
 
 interface AuthenticatedRequest extends Request {
-  firebaseUser?: VerifiedFirebaseUser;
+  firebaseUser?: VerifiedSessionUser;
 }
 
 const rootDir = process.cwd();
@@ -25,12 +25,67 @@ const firebaseConfig: FirebaseAppletConfig = JSON.parse(
   fs.readFileSync(firebaseConfigPath, 'utf-8')
 );
 
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_TTL_SECONDS = 12 * 60 * 60;
+
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '10mb' }));
 
 let cachedCerts: Record<string, string> = {};
 let certsExpiresAt = 0;
+
+function encodeBase64Url(buf: Buffer | string): string {
+  return Buffer.from(buf)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function createWorkspaceSessionToken(): { token: string; expiresInSec: number } {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const payload = {
+    uid: 'temis-atrile-principal',
+    email: 'administracion@temisatrile.es',
+    scope: 'workspace',
+    iat: nowSec,
+    exp: nowSec + SESSION_TTL_SECONDS,
+  };
+  const payloadB64 = encodeBase64Url(JSON.stringify(payload));
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest();
+  return {
+    token: `${payloadB64}.${encodeBase64Url(sig)}`,
+    expiresInSec: SESSION_TTL_SECONDS,
+  };
+}
+
+function verifyWorkspaceSessionToken(token: string): VerifiedSessionUser {
+  const parts = token.split('.');
+  if (parts.length !== 2) {
+    throw new Error('Formato de token de sesión inválido.');
+  }
+  const [payloadB64, sigB64] = parts;
+  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest();
+  const actualSig = decodeBase64Url(sigB64);
+  if (expectedSig.length !== actualSig.length || !crypto.timingSafeEqual(expectedSig, actualSig)) {
+    throw new Error('Firma de sesión no válida.');
+  }
+  const payload = JSON.parse(decodeBase64Url(payloadB64).toString('utf-8')) as {
+    uid?: string;
+    email?: string;
+    exp?: number;
+  };
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!payload.exp || payload.exp <= nowSec) {
+    throw new Error('La sesión ha caducado.');
+  }
+  return {
+    uid: payload.uid || 'temis-atrile-principal',
+    email: payload.email || 'administracion@temisatrile.es',
+    emailVerified: true,
+  };
+}
 
 async function getFirebasePublicCerts(): Promise<Record<string, string>> {
   const now = Date.now();
@@ -57,7 +112,7 @@ function decodeBase64Url(input: string): Buffer {
   return Buffer.from(normalized + '='.repeat(padLen), 'base64');
 }
 
-async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFirebaseUser> {
+async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedSessionUser> {
   const parts = idToken.split('.');
   if (parts.length !== 3) {
     throw new Error('Token de sesión con formato inválido.');
@@ -75,6 +130,9 @@ async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFirebaseU
     iat?: number;
     email?: string;
     email_verified?: boolean;
+    firebase?: {
+      sign_in_provider?: string;
+    };
   };
 
   if (header.alg !== 'RS256' || !header.kid) {
@@ -97,7 +155,7 @@ async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFirebaseU
 
   const nowSec = Math.floor(Date.now() / 1000);
   if (!payload.exp || payload.exp <= nowSec) {
-    throw new Error('La sesión ha caducado. Vuelve a iniciar sesión.');
+    throw new Error('La sesión ha caducado.');
   }
   if (payload.aud !== firebaseConfig.projectId) {
     throw new Error('Audiencia del token no coincide con el proyecto.');
@@ -108,18 +166,19 @@ async function verifyFirebaseIdToken(idToken: string): Promise<VerifiedFirebaseU
   if (!payload.sub || typeof payload.sub !== 'string') {
     throw new Error('Identificador de usuario ausente.');
   }
-  if (!payload.email || payload.email_verified !== true) {
+  const isAnonymousProvider = payload.firebase?.sign_in_provider === 'anonymous';
+  if (!isAnonymousProvider && (!payload.email || payload.email_verified !== true)) {
     throw new Error('El correo electrónico debe estar verificado.');
   }
 
   return {
     uid: payload.sub,
-    email: payload.email,
-    emailVerified: true,
+    email: payload.email || 'administracion@temisatrile.es',
+    emailVerified: payload.email_verified === true || isAnonymousProvider,
   };
 }
 
-async function requireFirebaseAuth(
+async function requireWorkspaceSession(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
@@ -127,7 +186,7 @@ async function requireFirebaseAuth(
   try {
     const authHeader = req.headers.authorization || '';
     if (!authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ error: 'Autenticación requerida.' });
+      res.status(401).json({ error: 'Sesión requerida.' });
       return;
     }
     const token = authHeader.slice(7).trim();
@@ -135,7 +194,11 @@ async function requireFirebaseAuth(
       res.status(401).json({ error: 'Token de sesión vacío.' });
       return;
     }
-    req.firebaseUser = await verifyFirebaseIdToken(token);
+    const dotCount = token.split('.').length;
+    req.firebaseUser =
+      dotCount === 2
+        ? verifyWorkspaceSessionToken(token)
+        : await verifyFirebaseIdToken(token);
     next();
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sesión no autorizada.';
@@ -159,10 +222,14 @@ function createGeminiClient(): GoogleGenAI {
 }
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, service: 'GESTION360' });
+  res.json({ ok: true, service: 'Gestión Temis Atrile' });
 });
 
-app.post('/api/ai/assistant', requireFirebaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/session', (_req: Request, res: Response) => {
+  res.json(createWorkspaceSessionToken());
+});
+
+app.post('/api/ai/assistant', requireWorkspaceSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const body = req.body as {
       question?: unknown;
@@ -189,7 +256,7 @@ app.post('/api/ai/assistant', requireFirebaseAuth, async (req: AuthenticatedRequ
       : '';
 
     const systemInstruction = [
-      'Eres el asistente financiero y operativo interno de GESTIÓN360.',
+      'Eres el asistente financiero y operativo interno de Gestión Temis Atrile (TEMIS ATRILE E.S.P.J.).',
       'Responde siempre en español con tono profesional, preciso y claro.',
       'REGLA ESTRICTA: Utiliza EXCLUSIVAMENTE los datos autorizados incluidos en el bloque CONTEXTO_EMPRESA.',
       'No inventes cifras, clientes, facturas, fechas ni cálculos fuera del contexto proporcionado.',
@@ -224,7 +291,7 @@ app.post('/api/ai/assistant', requireFirebaseAuth, async (req: AuthenticatedRequ
   }
 });
 
-app.post('/api/ai/ocr-invoice', requireFirebaseAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/ai/ocr-invoice', requireWorkspaceSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const body = req.body as {
       mimeType?: unknown;

@@ -43,7 +43,7 @@ const GESTOR_DOC_CATEGORIES = [
 ];
 
 export const HaciendaGestoriaModule: React.FC = () => {
-  const { permissions, firebaseUser, profile } = useAuth();
+  const { permissions, operatorUid, profile } = useAuth();
   const {
     fiscalObligations,
     gestoriaPackages,
@@ -175,7 +175,6 @@ export const HaciendaGestoriaModule: React.FC = () => {
   }, [selectedYear, selectedQuarter, invoices, expenses, documents]);
 
   const handlePrepareQuarter = async () => {
-    if (!firebaseUser || !profile) return;
     setPreparingClosing(true);
     try {
       setClosingPrepared(true);
@@ -196,8 +195,8 @@ export const HaciendaGestoriaModule: React.FC = () => {
         folder: 'Gestoría',
         docType: 'Resumen Cierre Trimestral',
         description: `Expediente preparatorio ${selectedYear} ${selectedQuarter}`,
-        uploadedByUid: firebaseUser.uid,
-        uploadedByName: profile.displayName,
+        uploadedByUid: operatorUid,
+        uploadedByName: profile?.displayName || 'Dirección · Temis Atrile',
       });
 
       // Download ZIP package
@@ -239,14 +238,14 @@ export const HaciendaGestoriaModule: React.FC = () => {
     if (!obForm.modelCode.trim() || !obForm.modelName.trim()) return;
     try {
       let receiptDocumentId = editingOb?.receiptDocumentId || '';
-      if (obReceiptFile && firebaseUser && profile) {
+      if (obReceiptFile) {
         const uploaded = await uploadDocumentToFirestore({
           file: obReceiptFile,
           folder: 'Hacienda',
           docType: `Justificante ${obForm.modelCode}`,
           description: `${obForm.modelCode} ${obForm.period} ${obForm.fiscalYear}`,
-          uploadedByUid: firebaseUser.uid,
-          uploadedByName: profile.displayName,
+          uploadedByUid: operatorUid,
+          uploadedByName: profile?.displayName || 'Dirección · Temis Atrile',
         });
         receiptDocumentId = uploaded.id;
       }
@@ -650,7 +649,7 @@ export const HaciendaGestoriaModule: React.FC = () => {
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  if (!gestorFile || !firebaseUser || !profile) return;
+                  if (!gestorFile) return;
                   setUploadingGestorDoc(true);
                   try {
                     const folderMap: Record<string, 'Gestoría' | 'Bancos' | 'Personal' | 'Contratos' | 'Hacienda'> = {
@@ -666,8 +665,8 @@ export const HaciendaGestoriaModule: React.FC = () => {
                       folder: folderMap[gestorUploadType] || 'Gestoría',
                       docType: gestorUploadType,
                       description: `Carpeta gestoría · ${gestorUploadType}`,
-                      uploadedByUid: firebaseUser.uid,
-                      uploadedByName: profile.displayName,
+                      uploadedByUid: operatorUid,
+                      uploadedByName: profile?.displayName || 'Dirección · Temis Atrile',
                     });
                     setGestorFile(null);
                     notify('success', 'Documento subido a la carpeta del gestor.');
@@ -982,14 +981,14 @@ export const HaciendaGestoriaModule: React.FC = () => {
             onSubmit={async (e) => {
               e.preventDefault();
               let receiptDocumentId = deliveryPkg.receiptDocumentId || '';
-              if (deliveryReceiptFile && firebaseUser && profile) {
+              if (deliveryReceiptFile) {
                 const uploaded = await uploadDocumentToFirestore({
                   file: deliveryReceiptFile,
                   folder: 'Gestoría',
                   docType: 'Justificante recepción gestoría',
                   description: `Entrega ${deliveryPkg.fiscalYear} ${deliveryPkg.quarter}`,
-                  uploadedByUid: firebaseUser.uid,
-                  uploadedByName: profile.displayName,
+                  uploadedByUid: operatorUid,
+                  uploadedByName: profile?.displayName || 'Dirección · Temis Atrile',
                 });
                 receiptDocumentId = uploaded.id;
               }
